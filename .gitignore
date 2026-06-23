@@ -1,0 +1,11 @@
+# Generated database — recreate by running brdatascraping.py
+nba_stats.db
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
