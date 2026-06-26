@@ -1,3 +1,7 @@
+# Claude Code — local only
+CLAUDE.md
+.claude/
+
 # Generated database — recreate by running brdatascraping.py
 nba_stats.db
 
