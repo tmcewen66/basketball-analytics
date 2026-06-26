@@ -3,7 +3,8 @@
     "allow": [
       "Bash(/opt/anaconda3/bin/python3 -m pip install basketball_reference_web_scraper)",
       "Bash(/opt/anaconda3/bin/python3 -c \"from basketball_reference_web_scraper import client; print\\([m for m in dir\\(client\\) if not m.startswith\\('_'\\)]\\)\")",
-      "Bash(/opt/anaconda3/bin/python3 *)"
+      "Bash(/opt/anaconda3/bin/python3 *)",
+      "Bash(git *)"
     ]
   }
 }
