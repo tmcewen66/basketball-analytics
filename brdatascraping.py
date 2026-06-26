@@ -26,16 +26,6 @@ BASIC_NUMERIC_COLS = [
     "assists", "steals", "blocks", "turnovers", "personal_fouls", "points",
 ]
 
-# Cumulative columns that get divided by games_played to produce per-game stats
-PER_GAME_COLS = [
-    "minutes_played",
-    "made_field_goals", "attempted_field_goals",
-    "made_three_point_field_goals", "attempted_three_point_field_goals",
-    "made_free_throws", "attempted_free_throws",
-    "offensive_rebounds", "defensive_rebounds",
-    "assists", "steals", "blocks", "turnovers", "personal_fouls", "points",
-]
-
 
 def _aggregate_basic(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -113,20 +103,9 @@ def _prepare_for_db(dfs_dict: dict, serialize_team: bool = False) -> pd.DataFram
     return pd.concat(frames, ignore_index=True)
 
 
-def _compute_per_game(basic_master: pd.DataFrame) -> pd.DataFrame:
-    """
-    Derives per-game stats by dividing cumulative counting stats by games_played.
-    Metadata and games_played/games_started are carried over unchanged.
-    """
-    pg = basic_master.copy()
-    pg[PER_GAME_COLS] = pg[PER_GAME_COLS].div(pg["games_played"], axis=0)
-    return pg
-
-
 def save_to_sqlite(basic_dfs: dict, advanced_dfs: dict, db_path: str = DB_PATH):
     basic_master = _prepare_for_db(basic_dfs, serialize_team=False)
     advanced_master = _prepare_for_db(advanced_dfs, serialize_team=True)
-    per_game_master = _compute_per_game(basic_master)
 
     with sqlite3.connect(db_path) as con:
         basic_master.to_sql("basic_stats", con, if_exists="replace", index=False)
@@ -141,17 +120,10 @@ def save_to_sqlite(basic_dfs: dict, advanced_dfs: dict, db_path: str = DB_PATH):
             "ON advanced_stats (slug, season_end_year)"
         )
 
-        per_game_master.to_sql("per_game_stats", con, if_exists="replace", index=False)
-        con.execute(
-            "CREATE INDEX IF NOT EXISTS idx_per_game_slug_season "
-            "ON per_game_stats (slug, season_end_year)"
-        )
-
     print(
         f"\nSaved to {db_path}: "
         f"basic_stats={len(basic_master)} rows, "
-        f"advanced_stats={len(advanced_master)} rows, "
-        f"per_game_stats={len(per_game_master)} rows"
+        f"advanced_stats={len(advanced_master)} rows"
     )
 
 
