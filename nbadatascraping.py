@@ -21,7 +21,7 @@ _PER_100_STAT_COLS = {
     "MIN", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT",
     "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB", "AST", "TOV",
     "STL", "BLK", "BLKA", "PF", "PFD", "PTS", "PLUS_MINUS",
-    "NBA_FANTASY_PTS", "DD2", "TD3", "WNBA_FANTASY_PTS",
+    "NBA_FANTASY_PTS", "WNBA_FANTASY_PTS",
 }
 
 
