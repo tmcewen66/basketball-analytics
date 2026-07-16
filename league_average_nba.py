@@ -11,7 +11,7 @@ import pandas as pd
 DB_PATH = "nba_stats.db"
 
 # Team identifiers and *_rank columns aren't meaningful once averaged league-wide
-_EXCLUDE_COLS = {"team_id", "team_name", "season_end_year", "gp", "w", "l", "w_pct"}
+_EXCLUDE_COLS = {"team_id", "team_name", "season_end_year", "gp", "w", "l", "w_pct", "per_100_min"}
 
 
 def load_team_stats(table_name: str, db_path: str = DB_PATH) -> pd.DataFrame:
