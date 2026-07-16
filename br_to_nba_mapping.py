@@ -168,8 +168,18 @@ def build_mapping_table(conn):
             print(f"    unmatched: {row}")
 
 
-if __name__ == "__main__":
-    conn = sqlite3.connect(DB_PATH)
+def _ensure_slug_column(conn):
+    # nbadatascraping.py rebuilds per_100_stats with if_exists="replace" on every
+    # run, which drops this column since the nba_api source data has no slug —
+    # re-add it here so this script works regardless of table state.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(per_100_stats)")}
+    if "slug" not in cols:
+        conn.execute("ALTER TABLE per_100_stats ADD COLUMN slug TEXT")
+        conn.commit()
+
+
+def main(db_path: str = DB_PATH):
+    conn = sqlite3.connect(db_path)
     conn.create_function("normalize_name", 1, normalize_name)
     _create_tables(conn)
     build_br_players_table(conn)
@@ -177,6 +187,7 @@ if __name__ == "__main__":
     build_mapping_table(conn)
 
     # Refresh slug column in per_100_stats from the updated mapping
+    _ensure_slug_column(conn)
     conn.execute("""
         UPDATE per_100_stats
         SET slug = (
@@ -190,3 +201,7 @@ if __name__ == "__main__":
 
     conn.close()
     print("Done.")
+
+
+if __name__ == "__main__":
+    main()

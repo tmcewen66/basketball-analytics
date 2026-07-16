@@ -3,12 +3,18 @@
 Fetches per-100-possessions stats for every NBA player from 2000-01 through
 2025-26 using the nba_api package and saves them to a SQLite database table
 'per_100_stats' in nba_stats.db.
+
+Rebuilds the BR-to-NBA slug mapping (br_to_nba_mapping.py) afterward, since
+saving per_100_stats replaces the table and drops its slug column. Requires
+basic_stats (from brdatascraping.py) to already be populated.
 """
 
 import sqlite3
 import time
 import pandas as pd
 from nba_api.stats.endpoints import leaguedashplayerstats
+
+import br_to_nba_mapping
 
 DB_PATH = "nba_stats.db"
 TABLE_NAME = "per_100_stats"
@@ -75,3 +81,6 @@ if __name__ == "__main__":
     master_df = fetch_all_seasons()
     save_to_sqlite(master_df)
     print(f"Done. {master_df['season_end_year'].nunique()} seasons loaded.")
+
+    print("\nRebuilding BR-to-NBA slug mapping...")
+    br_to_nba_mapping.main()
