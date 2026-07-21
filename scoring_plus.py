@@ -38,7 +38,7 @@ def compute_scoring_plus(
 
     df["pts_plus"] = df["per_100_pts"] / df["league_avg_per_100_pts_per_player"] * 100
     df["ts_plus"] = df["true_shooting_percentage"] / df["league_avg_true_shooting_percentage"] * 100
-    df["scoring_plus"] = (df["pts_plus"] + df["ts_plus"]) / 2.0
+    df["scoring_plus"] = 100 + (0.765 * (df["ts_plus"] - 100)) + (0.235 * (df["pts_plus"] - 100))
 
     return df[[
         "season_end_year", "slug", "name", "per_100_pts", "true_shooting_percentage",
