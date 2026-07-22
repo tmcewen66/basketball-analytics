@@ -25,7 +25,7 @@ def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.
             con,
         )
         per_100 = pd.read_sql(
-            "SELECT slug, season_end_year, per_100_reb, per_100_ast, per_100_stl, per_100_blk, "
+            "SELECT slug, season_end_year, player_id, per_100_reb, per_100_ast, per_100_stl, per_100_blk, "
             "per_100_tov FROM per_100_stats",
             con,
         )
@@ -39,7 +39,7 @@ def compute_player_profile(scoring_plus: pd.DataFrame, derived: pd.DataFrame, pe
     df["season"] = (df["season_end_year"] - 1).astype(str) + "-" + df["season_end_year"].astype(str)
 
     return df[[
-        "player_name", "team_name", "season_end_year", "season", "slug",
+        "player_name", "team_name", "season_end_year", "season", "slug", "player_id",
         "scoring_plus", "pts_plus", "ts_plus", "per_100_pts", "true_shooting_percentage",
         "age", "positions", "points_per_game", "fg_percentage", "three_point_percentage", "ft_percentage",
         "assists_per_game", "total_rebounds_per_game", "turnovers_per_game", "steals_per_game", "blocks_per_game",
