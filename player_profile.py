@@ -15,7 +15,7 @@ def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame]:
     with sqlite3.connect(db_path) as con:
         scoring_plus = pd.read_sql(
             "SELECT slug, season_end_year, name, per_100_pts, true_shooting_percentage, "
-            "pts_plus, ts_plus, scoring_plus FROM scoring_plus",
+            "pts_plus, ts_plus, scoring_plus, qualified FROM scoring_plus",
             con,
         )
         derived = pd.read_sql(
@@ -33,7 +33,7 @@ def compute_player_profile(scoring_plus: pd.DataFrame, derived: pd.DataFrame) ->
     return df[[
         "player_name", "team_name", "season_end_year", "slug",
         "scoring_plus", "pts_plus", "ts_plus", "per_100_pts", "true_shooting_percentage",
-        "points_per_game", "fg_percentage", "three_point_percentage", "ft_percentage",
+        "points_per_game", "fg_percentage", "three_point_percentage", "ft_percentage", "qualified",
     ]]
 
 
