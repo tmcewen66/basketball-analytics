@@ -36,9 +36,10 @@ def compute_player_profile(scoring_plus: pd.DataFrame, derived: pd.DataFrame, pe
     df = scoring_plus.merge(derived, on=["slug", "season_end_year"])
     df = df.merge(per_100, on=["slug", "season_end_year"])
     df = df.rename(columns={"name": "player_name", "team": "team_name"})
+    df["season"] = (df["season_end_year"] - 1).astype(str) + "-" + df["season_end_year"].astype(str)
 
     return df[[
-        "player_name", "team_name", "season_end_year", "slug",
+        "player_name", "team_name", "season_end_year", "season", "slug",
         "scoring_plus", "pts_plus", "ts_plus", "per_100_pts", "true_shooting_percentage",
         "age", "positions", "points_per_game", "fg_percentage", "three_point_percentage", "ft_percentage",
         "assists_per_game", "total_rebounds_per_game", "turnovers_per_game", "steals_per_game", "blocks_per_game",
