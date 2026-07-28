@@ -1,8 +1,10 @@
 #!/usr/bin/env /opt/anaconda3/bin/python3
 """
 Builds a player_profile table that combines scoring_plus (era-adjusted
-scoring metrics) with traditional per-game shooting splits from
-derived_stats, for a single at-a-glance view of a player-season.
+scoring metrics), traditional per-game shooting splits from derived_stats,
+and the unassisted-scoring profile (qualified_ast, pct_uast_fgm, uast_bin,
+uast_rating, profile) from scoring_profile, for a single at-a-glance view
+of a player-season.
 """
 
 import sqlite3
@@ -11,7 +13,7 @@ import pandas as pd
 DB_PATH = "nba_stats.db"
 
 
-def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     with sqlite3.connect(db_path) as con:
         scoring_plus = pd.read_sql(
             "SELECT slug, season_end_year, name, per_100_pts, true_shooting_percentage, "
@@ -25,25 +27,38 @@ def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.
             con,
         )
         per_100 = pd.read_sql(
-            "SELECT slug, season_end_year, player_id, per_100_reb, per_100_ast, per_100_stl, per_100_blk, "
+            "SELECT slug, season_end_year, player_id, team_abbreviation, per_100_reb, per_100_ast, per_100_stl, per_100_blk, "
             "per_100_tov FROM per_100_stats",
             con,
         )
-    return scoring_plus, derived, per_100
+        scoring_profile = pd.read_sql(
+            "SELECT slug, season_end_year, qualified, pct_uast_fgm, uast_bin, uast_rating, profile "
+            "FROM scoring_profile",
+            con,
+        )
+    return scoring_plus, derived, per_100, scoring_profile
 
 
-def compute_player_profile(scoring_plus: pd.DataFrame, derived: pd.DataFrame, per_100: pd.DataFrame) -> pd.DataFrame:
+def compute_player_profile(
+    scoring_plus: pd.DataFrame, derived: pd.DataFrame, per_100: pd.DataFrame, scoring_profile: pd.DataFrame
+) -> pd.DataFrame:
     df = scoring_plus.merge(derived, on=["slug", "season_end_year"])
     df = df.merge(per_100, on=["slug", "season_end_year"])
+    df = df.merge(
+        scoring_profile.rename(columns={"qualified": "qualified_ast"}),
+        on=["slug", "season_end_year"],
+        how="left",
+    )
     df = df.rename(columns={"name": "player_name", "team": "team_name"})
-    df["season"] = (df["season_end_year"] - 1).astype(str) + "-" + df["season_end_year"].astype(str)
+    df["season"] = (df["season_end_year"] - 1).astype(str) + "-" + df["season_end_year"].astype(str) # type: ignore
 
     return df[[
-        "player_name", "team_name", "season_end_year", "season", "slug", "player_id",
+        "player_name", "team_name", "team_abbreviation", "season_end_year", "season", "slug", "player_id",
         "scoring_plus", "pts_plus", "ts_plus", "per_100_pts", "true_shooting_percentage",
         "age", "positions", "points_per_game", "fg_percentage", "three_point_percentage", "ft_percentage",
         "assists_per_game", "total_rebounds_per_game", "turnovers_per_game", "steals_per_game", "blocks_per_game",
         "per_100_reb", "per_100_ast", "per_100_stl", "per_100_blk", "per_100_tov", "qualified",
+        "qualified_ast", "pct_uast_fgm", "uast_bin", "uast_rating", "profile",
     ]]
 
 
@@ -58,7 +73,7 @@ def save_to_sqlite(df: pd.DataFrame, db_path: str = DB_PATH) -> None:
 
 
 if __name__ == "__main__":
-    scoring_plus, derived, per_100 = load_tables()
-    player_profile_df = compute_player_profile(scoring_plus, derived, per_100)
+    scoring_plus, derived, per_100, scoring_profile = load_tables()
+    player_profile_df = compute_player_profile(scoring_plus, derived, per_100, scoring_profile)
     save_to_sqlite(player_profile_df)
     print(player_profile_df.head())
