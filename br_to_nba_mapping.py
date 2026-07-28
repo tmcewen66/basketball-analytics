@@ -168,13 +168,16 @@ def build_mapping_table(conn):
             print(f"    unmatched: {row}")
 
 
-def _ensure_slug_column(conn):
-    # nbadatascraping.py rebuilds per_100_stats with if_exists="replace" on every
-    # run, which drops this column since the nba_api source data has no slug —
-    # re-add it here so this script works regardless of table state.
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(per_100_stats)")}
+_SLUG_TABLES = ("per_100_stats", "scoring_splits")
+
+
+def _ensure_slug_column(conn, table: str):
+    # nbadatascraping.py rebuilds these tables with if_exists="replace" on
+    # every run, which drops this column since the nba_api source data has
+    # no slug — re-add it here so this script works regardless of table state.
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
     if "slug" not in cols:
-        conn.execute("ALTER TABLE per_100_stats ADD COLUMN slug TEXT")
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN slug TEXT")
         conn.commit()
 
 
@@ -186,18 +189,19 @@ def main(db_path: str = DB_PATH):
     build_nba_players_table(conn)
     build_mapping_table(conn)
 
-    # Refresh slug column in per_100_stats from the updated mapping
-    _ensure_slug_column(conn)
-    conn.execute("""
-        UPDATE per_100_stats
-        SET slug = (
-            SELECT slug FROM br_nba_mapping
-            WHERE player_id = per_100_stats.PLAYER_ID
-        )
-    """)
-    conn.commit()
-    nulls = conn.execute("SELECT COUNT(*) FROM per_100_stats WHERE slug IS NULL").fetchone()[0]
-    print(f"per_100_stats.slug refreshed — {nulls} rows still NULL (no BR counterpart)")
+    # Refresh slug column in per_100_stats/scoring_splits from the updated mapping
+    for table in _SLUG_TABLES:
+        _ensure_slug_column(conn, table)
+        conn.execute(f"""
+            UPDATE {table}
+            SET slug = (
+                SELECT slug FROM br_nba_mapping
+                WHERE player_id = {table}.PLAYER_ID
+            )
+        """)
+        conn.commit()
+        nulls = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE slug IS NULL").fetchone()[0]
+        print(f"{table}.slug refreshed — {nulls} rows still NULL (no BR counterpart)")
 
     conn.close()
     print("Done.")
