@@ -31,13 +31,13 @@ def load_player_profile(db_path: str = DB_PATH) -> pd.DataFrame:
 
 
 def uast_color(rating: float) -> str:
-    """Maps a uast_rating to its Finisher/Balanced/Creator color: blue/gray/dark red."""
+    """Maps a uast_rating to its Finisher/Balanced/Creator color: blue/gray/orange."""
     if rating <= -2:
         return "#2a78d6"  # diverging blue pole -> Finisher
     elif rating <= 1:
         return "#6b6a66"  # neutral midpoint -> Balanced
     else:
-        return "#a13939"  # dark red -> Creator
+        return "#c2703b"  # burnt orange -> Creator
 
 
 def uast_number_line_svg(rating: float) -> str:
@@ -84,7 +84,7 @@ def scoring_profile_badge_svg(profile: str, rating: float) -> str:
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 
 
-PROFILE_COLORS = {"Finisher": "#2a78d6", "Balanced": "#6b6a66", "Creator": "#a13939"}
+PROFILE_COLORS = {"Finisher": "#2a78d6", "Balanced": "#6b6a66", "Creator": "#c2703b"}
 
 
 def render_leaderboard(df: pd.DataFrame, metric_col: str, show_season: bool, n: int = 5) -> None:
