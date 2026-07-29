@@ -11,7 +11,10 @@ import base64
 import html
 import sqlite3
 
+import numpy as np
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 DB_PATH = "nba_stats.db"
@@ -81,6 +84,9 @@ def scoring_profile_badge_svg(profile: str, rating: float) -> str:
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 
 
+PROFILE_COLORS = {"Finisher": "#2a78d6", "Balanced": "#6b6a66", "Creator": "#a13939"}
+
+
 def render_leaderboard(df: pd.DataFrame, metric_col: str, show_season: bool, n: int = 5) -> None:
     top = df.nlargest(n, metric_col).reset_index(drop=True)
     if top.empty:
@@ -147,11 +153,12 @@ with col3:
 st.divider()
 
 st.subheader("All Players")
-qualified_only = st.checkbox("Show qualified players only", value=False)
+qualified_only = st.checkbox("Show qualified players only", value=True)
 search_term = st.text_input("Search player name")
 
-table_source = qualified_df if qualified_only else filtered_df
+league_source = qualified_df if qualified_only else filtered_df
 
+table_source = league_source
 if search_term:
     table_source = table_source[
         table_source["player_name"].str.contains(search_term, case=False, na=False)
@@ -189,15 +196,80 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Player": st.column_config.TextColumn(width="large"),
-        "Scoring+": st.column_config.NumberColumn(format="%d"),
-        "PTS+": st.column_config.NumberColumn(format="%d"),
-        "TS+": st.column_config.NumberColumn(format="%d"),
-        "PPG": st.column_config.NumberColumn(format="%.1f"),
-        "PTS per 100": st.column_config.NumberColumn(format="%.1f"),
-        "TS%": st.column_config.NumberColumn(format="%.3f"),
-        "FGM% UAST": st.column_config.NumberColumn(format="%.3f"),
+        "Player": st.column_config.TextColumn(width="medium"),
+        "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
+        "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
+        "TS+": st.column_config.NumberColumn(format="%d", width="small"),
+        "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
+        "PTS per 100": st.column_config.NumberColumn(format="%.1f", width="small"),
+        "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
+        "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
         "UAST Rating": st.column_config.ImageColumn(width="medium"),
-        "Scoring Profile": st.column_config.ImageColumn(width="small"),
+        "Scoring Profile": st.column_config.ImageColumn(width="medium"),
     },
 )
+
+st.divider()
+
+st.subheader("FGM% UAST vs. Scoring+")
+
+scatter_fig = px.scatter(
+    table_source,
+    x="pct_uast_fgm",
+    y="scoring_plus",
+    color="profile",
+    color_discrete_map=PROFILE_COLORS,
+    hover_name="player_name",
+    hover_data={"season": True, "pct_uast_fgm": ":.3f", "scoring_plus": ":.0f", "profile": False},
+    labels={"pct_uast_fgm": "FGM% UAST", "scoring_plus": "Scoring+", "profile": "Scoring Profile"},
+)
+scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+
+qualifier_text = "Qualified Players"
+
+
+def season_range_label(season_end_years) -> str:
+    return f"{min(season_end_years) - 1}-{max(season_end_years)}"
+
+
+# The average line always compares against scoring-title-qualified players,
+# regardless of the "Show qualified players only" checkbox.
+if search_term and season_choice == "All Seasons":
+    # Compare against the league across the searched player's whole career span,
+    # not just the (possibly single) row(s) the search itself matched.
+    career_seasons = df.loc[
+        df["player_name"].str.contains(search_term, case=False, na=False), "season_end_year"
+    ].unique()
+    vline_source = qualified_df[qualified_df["season_end_year"].isin(career_seasons)]
+    season_text = season_range_label(career_seasons)
+elif season_choice != "All Seasons":
+    vline_source = qualified_df
+    season_text = season_choice
+else:
+    vline_source = qualified_df
+    season_text = season_range_label(qualified_df["season_end_year"].unique())
+
+y_max_dev = (league_source["scoring_plus"] - 100).abs().max() if not league_source.empty else 10
+y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+scatter_fig.update_yaxes(range=[y0, y1])
+
+if not league_source.empty:
+    x_min, x_max = league_source["pct_uast_fgm"].min(), league_source["pct_uast_fgm"].max()
+    x_pad = (x_max - x_min) * 0.05
+    scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
+
+if not vline_source.empty:
+    vline_x = vline_source["pct_uast_fgm"].mean()
+    hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{season_text} ({qualifier_text})"
+    scatter_fig.add_trace(go.Scatter(
+        x=[vline_x] * 50,
+        y=np.linspace(y0, y1, 50),
+        mode="lines",
+        line=dict(dash="dash", color="#898781"),
+        hoverinfo="text",
+        hovertext=hover_label,
+        showlegend=False,
+    ))
+scatter_fig.update_traces(marker=dict(size=8, opacity=0.75), selector=dict(mode="markers"))
+
+st.plotly_chart(scatter_fig, use_container_width=True)
