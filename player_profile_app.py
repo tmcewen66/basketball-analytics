@@ -233,8 +233,27 @@ if selected_player_id is not None:
 else:
     table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
 
+def color_plus_metric(value: float) -> str:
+    color = "#1a7a3c" if value >= 100 else "#c0392b"  # green / red
+    return f"color: {color}"
+
+
+styled_table_df = (
+    table_df.style
+    .format({
+        "Scoring+": "{:.0f}",
+        "PTS+": "{:.0f}",
+        "TS+": "{:.0f}",
+        "PPG": "{:.1f}",
+        "PTS per 100": "{:.1f}",
+        "TS%": "{:.3f}",
+        "FGM% UAST": "{:.3f}",
+    })
+    .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
+)
+
 st.dataframe(
-    table_df,
+    styled_table_df,
     use_container_width=True,
     hide_index=True,
     column_config={
