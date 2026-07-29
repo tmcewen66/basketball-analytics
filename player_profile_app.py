@@ -123,7 +123,9 @@ seasons_by_year = (
     .drop_duplicates()
     .sort_values("season_end_year", ascending=False)
 )
-season_choice = st.selectbox("Season", ["All Seasons"] + seasons_by_year["season"].tolist())
+season_choice = st.selectbox(
+    "Season", ["All Seasons"] + seasons_by_year["season"].tolist(), key="season_choice"
+)
 
 if season_choice == "All Seasons":
     filtered_df = df
@@ -154,15 +156,51 @@ st.divider()
 
 st.subheader("All Players")
 qualified_only = st.checkbox("Show qualified players only", value=True)
-search_term = st.text_input("Search player name")
+
+if "selected_player_id" not in st.session_state:
+    st.session_state.selected_player_id = None
+
+search_term = st.text_input("Search player name", key="player_search_term")
+
+if search_term and st.session_state.selected_player_id is not None:
+    selected_name = df.loc[df["player_id"] == st.session_state.selected_player_id, "player_name"].iloc[0]
+    if search_term.lower() not in selected_name.lower():
+        st.session_state.selected_player_id = None
+
+if search_term and st.session_state.selected_player_id is None:
+    suggestions = (
+        df[df["player_name"].str.contains(search_term, case=False, na=False)]
+        .groupby(["player_id", "player_name"])["season_end_year"]
+        .agg(["min", "max", "count"])
+        .reset_index()
+        .rename(columns={"min": "career_start", "max": "career_end", "count": "seasons_played"})
+        .sort_values(["seasons_played", "player_name"], ascending=[False, True])
+        .head(5)
+    )
+    if suggestions.empty:
+        st.caption("No players found.")
+    else:
+        suggestion_cols = st.columns(len(suggestions))
+        for col, (_, row) in zip(suggestion_cols, suggestions.iterrows()):
+            label = f"{row['player_name']} {row['career_start'] - 1}-{row['career_end']}"
+            if col.button(label, key=f"suggest_{row['player_id']}"):
+                st.session_state.selected_player_id = row["player_id"]
+                st.rerun()
+
+selected_player_id = st.session_state.selected_player_id
+if selected_player_id is not None:
+    selected_name = df.loc[df["player_id"] == selected_player_id, "player_name"].iloc[0]
+    name_col, clear_col = st.columns([4, 1])
+    name_col.caption(f"Showing: **{selected_name}**")
+    if clear_col.button("Clear selection"):
+        st.session_state.selected_player_id = None
+        st.rerun()
 
 league_source = qualified_df if qualified_only else filtered_df
 
 table_source = league_source
-if search_term:
-    table_source = table_source[
-        table_source["player_name"].str.contains(search_term, case=False, na=False)
-    ]
+if selected_player_id is not None:
+    table_source = table_source[table_source["player_id"] == selected_player_id]
 
 table_df = table_source[[
     "player_name", "team_abbreviation", "season", "scoring_plus", "pts_plus", "ts_plus",
@@ -213,6 +251,22 @@ st.divider()
 
 st.subheader("FGM% UAST vs. Scoring+")
 
+
+def season_range_label(season_end_years) -> str:
+    return f"{min(season_end_years) - 1}-{max(season_end_years)}"
+
+
+if selected_player_id is not None:
+    selected_name = df.loc[df["player_id"] == selected_player_id, "player_name"].iloc[0]
+    plot_caption = f"{selected_name} {'Qualified' if qualified_only else 'All'} Seasons"
+else:
+    filter_qualifier_text = "Qualified Players" if qualified_only else "All Players"
+    if season_choice == "All Seasons":
+        plot_caption = f"{filter_qualifier_text} {season_range_label(league_source['season_end_year'].unique())} Seasons"
+    else:
+        plot_caption = f"{filter_qualifier_text} {season_choice} Seasons"
+st.caption(plot_caption)
+
 scatter_fig = px.scatter(
     table_source,
     x="pct_uast_fgm",
@@ -222,24 +276,18 @@ scatter_fig = px.scatter(
     hover_name="player_name",
     hover_data={"season": True, "pct_uast_fgm": ":.3f", "scoring_plus": ":.0f", "profile": False},
     labels={"pct_uast_fgm": "FGM% UAST", "scoring_plus": "Scoring+", "profile": "Scoring Profile"},
+    custom_data=["player_id"],
 )
 scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
 
 qualifier_text = "Qualified Players"
 
-
-def season_range_label(season_end_years) -> str:
-    return f"{min(season_end_years) - 1}-{max(season_end_years)}"
-
-
 # The average line always compares against scoring-title-qualified players,
 # regardless of the "Show qualified players only" checkbox.
-if search_term and season_choice == "All Seasons":
-    # Compare against the league across the searched player's whole career span,
-    # not just the (possibly single) row(s) the search itself matched.
-    career_seasons = df.loc[
-        df["player_name"].str.contains(search_term, case=False, na=False), "season_end_year"
-    ].unique()
+if selected_player_id is not None and season_choice == "All Seasons":
+    # Compare against the league across the selected player's whole career span,
+    # not just their (possibly few) qualified seasons.
+    career_seasons = df.loc[df["player_id"] == selected_player_id, "season_end_year"].unique()
     vline_source = qualified_df[qualified_df["season_end_year"].isin(career_seasons)]
     season_text = season_range_label(career_seasons)
 elif season_choice != "All Seasons":
@@ -272,4 +320,21 @@ if not vline_source.empty:
     ))
 scatter_fig.update_traces(marker=dict(size=8, opacity=0.75), selector=dict(mode="markers"))
 
-st.plotly_chart(scatter_fig, use_container_width=True)
+scatter_event = st.plotly_chart(
+    scatter_fig,
+    use_container_width=True,
+    on_select="rerun",
+    selection_mode="points",
+    key="scatter_chart",
+)
+
+clicked_points = scatter_event.selection.points if scatter_event else []
+if clicked_points:
+    customdata = clicked_points[0].get("customdata")
+    if customdata:
+        clicked_player_id = customdata[0]
+        if clicked_player_id != st.session_state.selected_player_id:
+            st.session_state.selected_player_id = clicked_player_id
+            st.session_state.player_search_term = ""
+            st.session_state.season_choice = "All Seasons"
+            st.rerun()
