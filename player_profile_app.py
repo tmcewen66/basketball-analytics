@@ -227,7 +227,11 @@ table_df["Scoring Profile"] = [
 table_df = table_df[[
     "Player", "Team", "Season", "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", "TS%",
     "FGM% UAST", "UAST Rating", "Scoring Profile",
-]].sort_values("Scoring+", ascending=False).reset_index(drop=True)
+]]
+if selected_player_id is not None:
+    table_df = table_df.sort_values("Season", ascending=True).reset_index(drop=True)
+else:
+    table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
 
 st.dataframe(
     table_df,
