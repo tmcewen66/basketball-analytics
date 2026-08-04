@@ -114,250 +114,431 @@ def render_leaderboard(df: pd.DataFrame, metric_col: str, show_season: bool, n: 
     st.markdown("".join(lines), unsafe_allow_html=True)
 
 
-df = load_player_profile()
-
-st.title("NBA Scoring+ Explorer")
-
-seasons_by_year = (
-    df[["season_end_year", "season"]]
-    .drop_duplicates()
-    .sort_values("season_end_year", ascending=False)
-)
-season_choice = st.selectbox(
-    "Season", ["All Seasons"] + seasons_by_year["season"].tolist(), key="season_choice"
-)
-
-if season_choice == "All Seasons":
-    filtered_df = df
-else:
-    filtered_df = df[df["season"] == season_choice]
-
-qualified_df = filtered_df[filtered_df["qualified"]]
-show_season_in_top = season_choice == "All Seasons"
-
-leaders_label = "All-Time" if season_choice == "All Seasons" else season_choice
-st.subheader(f"Top 5 — {leaders_label} (qualified players)")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.markdown("**Scoring+**")
-    render_leaderboard(qualified_df, "scoring_plus", show_season_in_top)
-
-with col2:
-    st.markdown("**Pts+**")
-    render_leaderboard(qualified_df, "pts_plus", show_season_in_top)
-
-with col3:
-    st.markdown("**TS+**")
-    render_leaderboard(qualified_df, "ts_plus", show_season_in_top)
-
-st.divider()
-
-st.subheader("All Players")
-qualified_only = st.checkbox("Show qualified players only", value=True)
-
-if "selected_player_id" not in st.session_state:
-    st.session_state.selected_player_id = None
-
-search_term = st.text_input("Search player name", key="player_search_term")
-
-if search_term and st.session_state.selected_player_id is not None:
-    selected_name = df.loc[df["player_id"] == st.session_state.selected_player_id, "player_name"].iloc[0]
-    if search_term.lower() not in selected_name.lower():
-        st.session_state.selected_player_id = None
-
-if search_term and st.session_state.selected_player_id is None:
-    suggestions = (
-        df[df["player_name"].str.contains(search_term, case=False, na=False)]
-        .groupby(["player_id", "player_name"])["season_end_year"]
-        .agg(["min", "max", "count"])
-        .reset_index()
-        .rename(columns={"min": "career_start", "max": "career_end", "count": "seasons_played"})
-        .sort_values(["seasons_played", "player_name"], ascending=[False, True])
-        .head(5)
-    )
-    if suggestions.empty:
-        st.caption("No players found.")
-    else:
-        suggestion_cols = st.columns(len(suggestions))
-        for col, (_, row) in zip(suggestion_cols, suggestions.iterrows()):
-            label = f"{row['player_name']} {row['career_start'] - 1}-{row['career_end']}"
-            if col.button(label, key=f"suggest_{row['player_id']}"):
-                st.session_state.selected_player_id = row["player_id"]
-                st.rerun()
-
-selected_player_id = st.session_state.selected_player_id
-if selected_player_id is not None:
-    selected_name = df.loc[df["player_id"] == selected_player_id, "player_name"].iloc[0]
-    name_col, clear_col = st.columns([4, 1])
-    name_col.caption(f"Showing: **{selected_name}**")
-    if clear_col.button("Clear selection"):
-        st.session_state.selected_player_id = None
-        st.rerun()
-
-league_source = qualified_df if qualified_only else filtered_df
-
-table_source = league_source
-if selected_player_id is not None:
-    table_source = table_source[table_source["player_id"] == selected_player_id]
-
-table_df = table_source[[
-    "player_name", "team_abbreviation", "season", "scoring_plus", "pts_plus", "ts_plus",
-    "points_per_game", "per_100_pts", "true_shooting_percentage", "pct_uast_fgm",
-    "uast_rating", "profile",
-]].rename(columns={
-    "player_name": "Player",
-    "team_abbreviation": "Team",
-    "season": "Season",
-    "scoring_plus": "Scoring+",
-    "pts_plus": "PTS+",
-    "ts_plus": "TS+",
-    "points_per_game": "PPG",
-    "per_100_pts": "PTS per 100",
-    "true_shooting_percentage": "TS%",
-    "pct_uast_fgm": "FGM% UAST",
-    "profile": "Scoring Profile",
-})
-table_df["UAST Rating"] = table_df["uast_rating"].apply(uast_number_line_svg)
-table_df["Scoring Profile"] = [
-    scoring_profile_badge_svg(profile, rating)
-    for profile, rating in zip(table_df["Scoring Profile"], table_df["uast_rating"])
-]
-table_df = table_df[[
-    "Player", "Team", "Season", "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", "TS%",
-    "FGM% UAST", "UAST Rating", "Scoring Profile",
-]]
-if selected_player_id is not None:
-    table_df = table_df.sort_values("Season", ascending=True).reset_index(drop=True)
-else:
-    table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
-
-def color_plus_metric(value: float) -> str:
+def color_plus_metric(value) -> str:
     color = "#1a7a3c" if value >= 100 else "#c0392b"  # green / red
     return f"color: {color}"
 
 
-styled_table_df = (
-    table_df.style
-    .format({
-        "Scoring+": "{:.0f}",
-        "PTS+": "{:.0f}",
-        "TS+": "{:.0f}",
-        "PPG": "{:.1f}",
-        "PTS per 100": "{:.1f}",
-        "TS%": "{:.3f}",
-        "FGM% UAST": "{:.3f}",
-    })
-    .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
-)
-
-st.dataframe(
-    styled_table_df,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Player": st.column_config.TextColumn(width="medium"),
-        "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
-        "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
-        "TS+": st.column_config.NumberColumn(format="%d", width="small"),
-        "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
-        "PTS per 100": st.column_config.NumberColumn(format="%.1f", width="small"),
-        "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
-        "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
-        "UAST Rating": st.column_config.ImageColumn(width="medium"),
-        "Scoring Profile": st.column_config.ImageColumn(width="medium"),
-    },
-)
-
-st.divider()
-
-st.subheader("FGM% UAST vs. Scoring+")
+def render_top_nav(current_page: str) -> None:
+    st.title("NBA Scoring+ Explorer")
+    choice = st.pills(
+        "Navigation",
+        ["Home", "Compare"],
+        default=current_page,
+        key="top_nav_pills",
+        label_visibility="collapsed",
+    )
+    if choice == "Home" and current_page != "Home":
+        st.switch_page(home_page)
+    elif choice == "Compare" and current_page != "Compare":
+        st.switch_page(compare_page)
+    st.divider()
 
 
-def season_range_label(season_end_years) -> str:
-    return f"{min(season_end_years) - 1}-{max(season_end_years)}"
+def render_home(df: pd.DataFrame) -> None:
+    render_top_nav("Home")
 
+    seasons_by_year = (
+        df[["season_end_year", "season"]]
+        .drop_duplicates()
+        .sort_values("season_end_year", ascending=False)
+    )
+    season_choice = st.selectbox(
+        "Season", ["All Seasons"] + seasons_by_year["season"].tolist(), key="season_choice"
+    )
 
-if selected_player_id is not None:
-    selected_name = df.loc[df["player_id"] == selected_player_id, "player_name"].iloc[0]
-    plot_caption = f"{selected_name} {'Qualified' if qualified_only else 'All'} Seasons"
-else:
-    filter_qualifier_text = "Qualified Players" if qualified_only else "All Players"
     if season_choice == "All Seasons":
-        plot_caption = f"{filter_qualifier_text} {season_range_label(league_source['season_end_year'].unique())} Seasons"
+        filtered_df = df
     else:
-        plot_caption = f"{filter_qualifier_text} {season_choice} Seasons"
-st.caption(plot_caption)
+        filtered_df = df[df["season"] == season_choice]
 
-scatter_fig = px.scatter(
-    table_source,
-    x="pct_uast_fgm",
-    y="scoring_plus",
-    color="profile",
-    color_discrete_map=PROFILE_COLORS,
-    hover_name="player_name",
-    hover_data={"season": True, "pct_uast_fgm": ":.3f", "scoring_plus": ":.0f", "profile": False},
-    labels={"pct_uast_fgm": "FGM% UAST", "scoring_plus": "Scoring+", "profile": "Scoring Profile"},
-    custom_data=["player_id"],
-)
-scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+    qualified_df = filtered_df[filtered_df["qualified"]]
+    show_season_in_top = season_choice == "All Seasons"
 
-qualifier_text = "Qualified Players"
+    leaders_label = "All-Time" if season_choice == "All Seasons" else season_choice
+    st.subheader(f"Top 5 — {leaders_label} (qualified players)")
 
-# The average line always compares against scoring-title-qualified players,
-# regardless of the "Show qualified players only" checkbox.
-if selected_player_id is not None and season_choice == "All Seasons":
-    # Compare against the league across the selected player's whole career span,
-    # not just their (possibly few) qualified seasons.
-    career_seasons = df.loc[df["player_id"] == selected_player_id, "season_end_year"].unique()
-    vline_source = qualified_df[qualified_df["season_end_year"].isin(career_seasons)]
-    season_text = season_range_label(career_seasons)
-elif season_choice != "All Seasons":
-    vline_source = qualified_df
-    season_text = season_choice
-else:
-    vline_source = qualified_df
-    season_text = season_range_label(qualified_df["season_end_year"].unique())
+    col1, col2, col3 = st.columns(3)
 
-y_max_dev = (league_source["scoring_plus"] - 100).abs().max() if not league_source.empty else 10
-y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
-scatter_fig.update_yaxes(range=[y0, y1])
+    with col1:
+        st.markdown("**Scoring+**")
+        render_leaderboard(qualified_df, "scoring_plus", show_season_in_top)
 
-if not league_source.empty:
-    x_min, x_max = league_source["pct_uast_fgm"].min(), league_source["pct_uast_fgm"].max()
-    x_pad = (x_max - x_min) * 0.05
-    scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
+    with col2:
+        st.markdown("**Pts+**")
+        render_leaderboard(qualified_df, "pts_plus", show_season_in_top)
 
-if not vline_source.empty:
-    vline_x = vline_source["pct_uast_fgm"].mean()
-    hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{season_text} ({qualifier_text})"
-    scatter_fig.add_trace(go.Scatter(
-        x=[vline_x] * 50,
-        y=np.linspace(y0, y1, 50),
-        mode="lines",
-        line=dict(dash="dash", color="#898781"),
-        hoverinfo="text",
-        hovertext=hover_label,
-        showlegend=False,
-    ))
-scatter_fig.update_traces(marker=dict(size=8, opacity=0.75), selector=dict(mode="markers"))
+    with col3:
+        st.markdown("**TS+**")
+        render_leaderboard(qualified_df, "ts_plus", show_season_in_top)
 
-scatter_event = st.plotly_chart(
-    scatter_fig,
-    use_container_width=True,
-    on_select="rerun",
-    selection_mode="points",
-    key="scatter_chart",
-)
+    st.divider()
 
-clicked_points = scatter_event.selection.points if scatter_event else []
-if clicked_points:
-    customdata = clicked_points[0].get("customdata")
-    if customdata:
-        clicked_player_id = customdata[0]
-        if clicked_player_id != st.session_state.selected_player_id:
-            st.session_state.selected_player_id = clicked_player_id
-            st.session_state.player_search_term = ""
-            st.session_state.season_choice = "All Seasons"
+    st.subheader("All Players")
+    qualified_only = st.checkbox("Show qualified players only", value=True)
+
+    if "selected_player_id" not in st.session_state:
+        st.session_state.selected_player_id = None
+
+    search_term = st.text_input("Search player name", key="player_search_term")
+
+    if search_term and st.session_state.selected_player_id is not None:
+        selected_name = df.loc[df["player_id"] == st.session_state.selected_player_id]["player_name"].iloc[0]
+        if search_term.lower() not in selected_name.lower():
+            st.session_state.selected_player_id = None
+
+    if search_term and st.session_state.selected_player_id is None:
+        suggestions = (
+            df[df["player_name"].str.contains(search_term, case=False, na=False)]
+            .groupby(["player_id", "player_name"])["season_end_year"]
+            .agg(["min", "max", "count"])
+            .reset_index()
+            .rename(columns={"min": "career_start", "max": "career_end", "count": "seasons_played"})
+            .sort_values(["seasons_played", "player_name"], ascending=[False, True])
+            .head(5)
+        )
+        if suggestions.empty:
+            st.caption("No players found.")
+        else:
+            suggestion_cols = st.columns(len(suggestions))
+            for col, (_, row) in zip(suggestion_cols, suggestions.iterrows()):
+                label = f"{row['player_name']} {row['career_start'] - 1}-{row['career_end']}"
+                if col.button(label, key=f"suggest_{row['player_id']}"):
+                    st.session_state.selected_player_id = row["player_id"]
+                    st.rerun()
+
+    selected_player_id = st.session_state.selected_player_id
+    if selected_player_id is not None:
+        selected_name = df.loc[df["player_id"] == selected_player_id]["player_name"].iloc[0]
+        name_col, clear_col = st.columns([4, 1])
+        name_col.caption(f"Showing: **{selected_name}**")
+        if clear_col.button("Clear selection"):
+            st.session_state.selected_player_id = None
             st.rerun()
+
+    league_source = qualified_df if qualified_only else filtered_df
+
+    table_source = league_source
+    if selected_player_id is not None:
+        table_source = table_source[table_source["player_id"] == selected_player_id]
+
+    table_df = table_source[[
+        "player_name", "team_abbreviation", "season", "scoring_plus", "pts_plus", "ts_plus",
+        "points_per_game", "per_100_pts", "true_shooting_percentage", "pct_uast_fgm",
+        "uast_rating", "profile",
+    ]].rename(columns={
+        "player_name": "Player",
+        "team_abbreviation": "Team",
+        "season": "Season",
+        "scoring_plus": "Scoring+",
+        "pts_plus": "PTS+",
+        "ts_plus": "TS+",
+        "points_per_game": "PPG",
+        "per_100_pts": "PTS per 100",
+        "true_shooting_percentage": "TS%",
+        "pct_uast_fgm": "FGM% UAST",
+        "profile": "Scoring Profile",
+    })
+    table_df["UAST Rating"] = table_df["uast_rating"].apply(uast_number_line_svg)
+    table_df["Scoring Profile"] = [
+        scoring_profile_badge_svg(profile, rating)
+        for profile, rating in zip(table_df["Scoring Profile"], table_df["uast_rating"])
+    ]
+    table_df = table_df[[
+        "Player", "Team", "Season", "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", "TS%",
+        "FGM% UAST", "UAST Rating", "Scoring Profile",
+    ]]
+    if selected_player_id is not None:
+        table_df = table_df.sort_values("Season", ascending=True).reset_index(drop=True)
+    else:
+        table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
+
+    styled_table_df = (
+        table_df.style
+        .format({
+            "Scoring+": "{:.0f}",
+            "PTS+": "{:.0f}",
+            "TS+": "{:.0f}",
+            "PPG": "{:.1f}",
+            "PTS per 100": "{:.1f}",
+            "TS%": "{:.3f}",
+            "FGM% UAST": "{:.3f}",
+        })
+        .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
+    )
+
+    st.dataframe(
+        styled_table_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Player": st.column_config.TextColumn(width="medium"),
+            "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
+            "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "TS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "PTS per 100": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "UAST Rating": st.column_config.ImageColumn(width="medium"),
+            "Scoring Profile": st.column_config.ImageColumn(width="medium"),
+        },
+    )
+
+    st.divider()
+
+    st.subheader("FGM% UAST vs. Scoring+")
+
+    def season_range_label(season_end_years) -> str:
+        return f"{min(season_end_years) - 1}-{max(season_end_years)}"
+
+    if selected_player_id is not None:
+        selected_name = df.loc[df["player_id"] == selected_player_id]["player_name"].iloc[0]
+        plot_caption = f"{selected_name} {'Qualified' if qualified_only else 'All'} Seasons"
+    else:
+        filter_qualifier_text = "Qualified Players" if qualified_only else "All Players"
+        if season_choice == "All Seasons":
+            plot_caption = f"{filter_qualifier_text} {season_range_label(league_source['season_end_year'].unique())} Seasons"
+        else:
+            plot_caption = f"{filter_qualifier_text} {season_choice} Seasons"
+    st.caption(plot_caption)
+
+    scatter_fig = px.scatter(
+        table_source,
+        x="pct_uast_fgm",
+        y="scoring_plus",
+        color="profile",
+        color_discrete_map=PROFILE_COLORS,
+        hover_name="player_name",
+        hover_data={"season": True, "pct_uast_fgm": ":.3f", "scoring_plus": ":.0f", "profile": False},
+        labels={"pct_uast_fgm": "FGM% UAST", "scoring_plus": "Scoring+", "profile": "Scoring Profile"},
+        custom_data=["player_id"],
+    )
+    scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+
+    qualifier_text = "Qualified Players"
+
+    # The average line always compares against scoring-title-qualified players,
+    # regardless of the "Show qualified players only" checkbox.
+    if selected_player_id is not None and season_choice == "All Seasons":
+        # Compare against the league across the selected player's whole career span,
+        # not just their (possibly few) qualified seasons.
+        career_seasons = df.loc[df["player_id"] == selected_player_id]["season_end_year"].unique()
+        vline_source = qualified_df[qualified_df["season_end_year"].isin(career_seasons)]
+        season_text = season_range_label(career_seasons)
+    elif season_choice != "All Seasons":
+        vline_source = qualified_df
+        season_text = season_choice
+    else:
+        vline_source = qualified_df
+        season_text = season_range_label(qualified_df["season_end_year"].unique())
+
+    y_max_dev = (league_source["scoring_plus"] - 100).abs().max() if not league_source.empty else 10
+    y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+    scatter_fig.update_yaxes(range=[y0, y1])
+
+    if not league_source.empty:
+        x_min, x_max = league_source["pct_uast_fgm"].min(), league_source["pct_uast_fgm"].max()
+        x_pad = (x_max - x_min) * 0.05
+        scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
+
+    if not vline_source.empty:
+        vline_x = vline_source["pct_uast_fgm"].mean()
+        hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{season_text} ({qualifier_text})"
+        scatter_fig.add_trace(go.Scatter(
+            x=[vline_x] * 50,
+            y=np.linspace(y0, y1, 50),
+            mode="lines",
+            line=dict(dash="dash", color="#898781"),
+            hoverinfo="text",
+            hovertext=hover_label,
+            showlegend=False,
+        ))
+    scatter_fig.update_traces(marker=dict(size=8, opacity=0.75), selector=dict(mode="markers"))
+
+    scatter_event = st.plotly_chart(
+        scatter_fig,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="points",
+        key="scatter_chart",
+    )
+
+    clicked_points = scatter_event.get("selection", {}).get("points", []) if scatter_event else []
+    if clicked_points:
+        customdata = clicked_points[0].get("customdata")
+        if customdata:
+            clicked_player_id = customdata[0]
+            if clicked_player_id != st.session_state.selected_player_id:
+                st.session_state.selected_player_id = clicked_player_id
+                st.session_state.player_search_term = ""
+                st.session_state.season_choice = "All Seasons"
+                st.rerun()
+
+
+# --- Compare page -----------------------------------------------------------
+
+# (column, label, kind) in display order. `kind` drives both formatting and
+# whether the value is eligible for the bold-if-higher comparison.
+COMPARE_ROWS = [
+    ("player_name", "Player", "str"),
+    ("team_abbreviation", "Team", "str"),
+    ("season", "Season", "str"),
+    ("age", "Age", "int"),
+    ("positions", "Position", "title"),
+    ("games_played", "GP", "int_cmp"),
+    ("minutes_per_game", "MPG", "num1"),
+    ("scoring_plus", "Scoring+", "num0"),
+    ("pts_plus", "PTS+", "num0"),
+    ("ts_plus", "TS+", "num0"),
+    ("points_per_game", "PPG", "num1"),
+    ("per_100_pts", "PTS per 100", "num1"),
+    ("fg_percentage", "FG%", "num3"),
+    ("three_point_percentage", "3P%", "num3"),
+    ("true_shooting_percentage", "TS%", "num3"),
+    ("pct_uast_fgm", "FGM% UAST", "num3"),
+]
+COMPARABLE_KINDS = {"num0", "num1", "num3", "int_cmp"}
+
+
+def format_compare_value(kind: str, value) -> str:
+    if kind == "str":
+        return html.escape(str(value))
+    if kind == "title":
+        return html.escape(str(value).title())
+    if kind in ("int", "int_cmp"):
+        return f"{int(value)}"
+    if kind == "num0":
+        return f"{value:.0f}"
+    if kind == "num1":
+        return f"{value:.1f}"
+    if kind == "num3":
+        return f"{value:.3f}"
+    return html.escape(str(value))
+
+
+def player_search_widget(df: pd.DataFrame, key_prefix: str, label: str) -> int | None:
+    sel_key = f"{key_prefix}_selected_id"
+    search_key = f"{key_prefix}_search"
+    if sel_key not in st.session_state:
+        st.session_state[sel_key] = None
+
+    search_term = st.text_input(label, key=search_key)
+
+    if search_term and st.session_state[sel_key] is not None:
+        selected_name = df.loc[df["player_id"] == st.session_state[sel_key]]["player_name"].iloc[0]
+        if search_term.lower() not in selected_name.lower():
+            st.session_state[sel_key] = None
+
+    if search_term and st.session_state[sel_key] is None:
+        suggestions = (
+            df[df["player_name"].str.contains(search_term, case=False, na=False)]
+            .groupby(["player_id", "player_name"])["season_end_year"]
+            .agg(["min", "max", "count"])
+            .reset_index()
+            .rename(columns={"min": "career_start", "max": "career_end", "count": "seasons_played"})
+            .sort_values(["seasons_played", "player_name"], ascending=[False, True])
+            .head(5)
+        )
+        if suggestions.empty:
+            st.caption("No players found.")
+        else:
+            for _, row in suggestions.iterrows():
+                suggestion_label = f"{row['player_name']} {row['career_start'] - 1}-{row['career_end']}"
+                if st.button(suggestion_label, key=f"{key_prefix}_suggest_{row['player_id']}"):
+                    st.session_state[sel_key] = row["player_id"]
+                    st.rerun()
+
+    selected_id = st.session_state[sel_key]
+    if selected_id is not None:
+        selected_name = df.loc[df["player_id"] == selected_id]["player_name"].iloc[0]
+        name_col, clear_col = st.columns([4, 1])
+        name_col.caption(f"Showing: **{selected_name}**")
+        if clear_col.button("Clear", key=f"{key_prefix}_clear"):
+            st.session_state[sel_key] = None
+            st.rerun()
+    return selected_id
+
+
+def player_season_widget(df: pd.DataFrame, player_id: int, key_prefix: str) -> str | None:
+    seasons = (
+        df[df["player_id"] == player_id][["season_end_year", "season"]]
+        .drop_duplicates()
+        .sort_values("season_end_year", ascending=False)
+    )
+    # Keyed by player_id so switching players never leaves a stale selection
+    # that isn't in the new options list.
+    return st.selectbox("Season", seasons["season"].tolist(), key=f"{key_prefix}_season_{player_id}")
+
+
+def render_compare_table(row: pd.Series | None, other_row: pd.Series | None) -> str:
+    if row is None:
+        return "<div style='opacity:0.6; padding:0.5rem 0;'>Select a player and season above.</div>"
+
+    lines = ["<table style='width:100%; border-collapse:collapse;'>"]
+    for col, label, kind in COMPARE_ROWS:
+        value_display = format_compare_value(kind, row[col])
+        bold = (
+            kind in COMPARABLE_KINDS
+            and other_row is not None
+            and row[col] > other_row[col]
+        )
+        weight = "700" if bold else "400"
+        lines.append(
+            "<tr>"
+            "<td style='padding:4px 10px; border-bottom:1px solid rgba(128,128,128,0.25); opacity:0.7;'>"
+            f"{label}</td>"
+            f"<td style='padding:4px 10px; border-bottom:1px solid rgba(128,128,128,0.25); font-weight:{weight};'>"
+            f"{value_display}</td>"
+            "</tr>"
+        )
+
+    profile_color = uast_color(row["uast_rating"])
+    lines.append(
+        "<tr>"
+        "<td style='padding:4px 10px; opacity:0.7;'>Scoring Profile</td>"
+        f"<td style='padding:4px 10px; color:{profile_color}; font-weight:700;'>"
+        f"{html.escape(str(row['profile']))}</td>"
+        "</tr>"
+    )
+    lines.append("</table>")
+    return "".join(lines)
+
+
+def render_compare(df: pd.DataFrame) -> None:
+    render_top_nav("Compare")
+    st.subheader("Compare Players")
+
+    search_col1, search_col2 = st.columns(2)
+
+    with search_col1:
+        st.subheader("Player 1")
+        p1_id = player_search_widget(df, "cmp1", "Search player name")
+        p1_row = None
+        if p1_id is not None:
+            p1_season = player_season_widget(df, p1_id, "cmp1")
+            p1_row = df[(df["player_id"] == p1_id) & (df["season"] == p1_season)].iloc[0]
+
+    with search_col2:
+        st.subheader("Player 2")
+        p2_id = player_search_widget(df, "cmp2", "Search player name")
+        p2_row = None
+        if p2_id is not None:
+            p2_season = player_season_widget(df, p2_id, "cmp2")
+            p2_row = df[(df["player_id"] == p2_id) & (df["season"] == p2_season)].iloc[0]
+
+    st.divider()
+
+    table_col1, table_col2 = st.columns(2)
+    with table_col1:
+        st.markdown(render_compare_table(p1_row, p2_row), unsafe_allow_html=True)
+    with table_col2:
+        st.markdown(render_compare_table(p2_row, p1_row), unsafe_allow_html=True)
+
+
+df = load_player_profile()
+
+home_page = st.Page(lambda: render_home(df), title="Home", url_path="home", default=True)
+compare_page = st.Page(lambda: render_compare(df), title="Compare", url_path="compare")
+
+st.navigation([home_page, compare_page], position="hidden").run()
