@@ -85,6 +85,18 @@ def scoring_profile_badge_svg(profile: str, rating: float) -> str:
 
 
 PROFILE_COLORS = {"Finisher": "#2a78d6", "Balanced": "#6b6a66", "Creator": "#c2703b"}
+PLAYER1_COLOR = "#c9a227"  # gold
+PLAYER2_COLOR = "#1a8a8a"  # teal
+
+
+def hex_to_rgba(hex_color: str, alpha: float) -> str:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def season_range_label(season_end_years) -> str:
+    return f"{min(season_end_years) - 1}-{max(season_end_years)}"
 
 
 def render_leaderboard(df: pd.DataFrame, metric_col: str, show_season: bool, n: int = 5) -> None:
@@ -119,6 +131,31 @@ def color_plus_metric(value) -> str:
     return f"color: {color}"
 
 
+SCORING_PLUS_NEUTRAL_RGB = (201, 200, 194)  # #c9c8c2, matches the app's other neutral grays
+SCORING_PLUS_GREEN_RGB = (26, 122, 60)      # #1a7a3c
+SCORING_PLUS_RED_RGB = (192, 57, 43)        # #c0392b
+
+
+def scoring_plus_gradient_color(value: float, min_val: float, max_val: float) -> str:
+    """Diverging red<->neutral<->green scale centered at 100 (league average).
+
+    Darkest red at min_val, darkest green at max_val, neutral gray at exactly 100.
+    """
+    if value >= 100:
+        span = max(max_val - 100, 1e-9)
+        t = min(max((value - 100) / span, 0.0), 1.0)
+        target = SCORING_PLUS_GREEN_RGB
+    else:
+        span = max(100 - min_val, 1e-9)
+        t = min(max((100 - value) / span, 0.0), 1.0)
+        target = SCORING_PLUS_RED_RGB
+    rgb = tuple(
+        round(SCORING_PLUS_NEUTRAL_RGB[i] + (target[i] - SCORING_PLUS_NEUTRAL_RGB[i]) * t)
+        for i in range(3)
+    )
+    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+
 def render_top_nav(current_page: str) -> None:
     st.title("NBA Scoring+ Explorer")
     choice = st.pills(
@@ -137,6 +174,13 @@ def render_top_nav(current_page: str) -> None:
 
 def render_home(df: pd.DataFrame) -> None:
     render_top_nav("Home")
+
+    # Scatter-click selection defers clearing the search/season widgets to here,
+    # before they're instantiated below — Streamlit forbids writing to a widget's
+    # session_state key later in the same run once that widget has been created.
+    if st.session_state.pop("_reset_home_filters", False):
+        st.session_state.player_search_term = ""
+        st.session_state.season_choice = "All Seasons"
 
     seasons_by_year = (
         df[["season_end_year", "season"]]
@@ -287,10 +331,14 @@ def render_home(df: pd.DataFrame) -> None:
 
     st.divider()
 
-    st.subheader("FGM% UAST vs. Scoring+")
-
-    def season_range_label(season_end_years) -> str:
-        return f"{min(season_end_years) - 1}-{max(season_end_years)}"
+    title_col, dropdown_col = st.columns([3, 1])
+    plot_choice = dropdown_col.selectbox(
+        "Scatter plot",
+        ["FGM% UAST vs Scoring+", "TS+ vs PTS+"],
+        key="home_scatter_choice",
+        label_visibility="collapsed",
+    )
+    title_col.subheader(plot_choice)
 
     if selected_player_id is not None:
         selected_name = df.loc[df["player_id"] == selected_player_id]["player_name"].iloc[0]
@@ -301,79 +349,133 @@ def render_home(df: pd.DataFrame) -> None:
             plot_caption = f"{filter_qualifier_text} {season_range_label(league_source['season_end_year'].unique())} Seasons"
         else:
             plot_caption = f"{filter_qualifier_text} {season_choice} Seasons"
-    st.caption(plot_caption)
+    title_col.caption(plot_caption)
 
-    scatter_fig = px.scatter(
-        table_source,
-        x="pct_uast_fgm",
-        y="scoring_plus",
-        color="profile",
-        color_discrete_map=PROFILE_COLORS,
-        hover_name="player_name",
-        hover_data={"season": True, "pct_uast_fgm": ":.3f", "scoring_plus": ":.0f", "profile": False},
-        labels={"pct_uast_fgm": "FGM% UAST", "scoring_plus": "Scoring+", "profile": "Scoring Profile"},
-        custom_data=["player_id"],
-    )
-    scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+    def handle_scatter_click(scatter_event) -> None:
+        clicked_points = scatter_event.get("selection", {}).get("points", []) if scatter_event else []
+        if clicked_points:
+            customdata = clicked_points[0].get("customdata")
+            if customdata:
+                clicked_player_id = customdata[0]
+                if clicked_player_id != st.session_state.selected_player_id:
+                    st.session_state.selected_player_id = clicked_player_id
+                    st.session_state["_reset_home_filters"] = True
+                    st.rerun()
 
-    qualifier_text = "Qualified Players"
+    if plot_choice == "FGM% UAST vs Scoring+":
+        scatter_fig = px.scatter(
+            table_source,
+            x="pct_uast_fgm",
+            y="scoring_plus",
+            color="profile",
+            color_discrete_map=PROFILE_COLORS,
+            hover_name="player_name",
+            labels={"pct_uast_fgm": "FGM% UAST", "scoring_plus": "Scoring+", "profile": "Scoring Profile"},
+            custom_data=["player_id", "season"],
+        )
+        scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
 
-    # The average line always compares against scoring-title-qualified players,
-    # regardless of the "Show qualified players only" checkbox.
-    if selected_player_id is not None and season_choice == "All Seasons":
-        # Compare against the league across the selected player's whole career span,
-        # not just their (possibly few) qualified seasons.
-        career_seasons = df.loc[df["player_id"] == selected_player_id]["season_end_year"].unique()
-        vline_source = qualified_df[qualified_df["season_end_year"].isin(career_seasons)]
-        season_text = season_range_label(career_seasons)
-    elif season_choice != "All Seasons":
-        vline_source = qualified_df
-        season_text = season_choice
+        qualifier_text = "Qualified Players"
+
+        # The average line always compares against scoring-title-qualified players,
+        # regardless of the "Show qualified players only" checkbox.
+        if selected_player_id is not None and season_choice == "All Seasons":
+            # Compare against the league across the selected player's whole career span,
+            # not just their (possibly few) qualified seasons.
+            career_seasons = df.loc[df["player_id"] == selected_player_id]["season_end_year"].unique()
+            vline_source = qualified_df[qualified_df["season_end_year"].isin(career_seasons)]
+            season_text = season_range_label(career_seasons)
+        elif season_choice != "All Seasons":
+            vline_source = qualified_df
+            season_text = season_choice
+        else:
+            vline_source = qualified_df
+            season_text = season_range_label(qualified_df["season_end_year"].unique())
+
+        y_max_dev = (league_source["scoring_plus"] - 100).abs().max() if not league_source.empty else 10
+        y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+        scatter_fig.update_yaxes(range=[y0, y1])
+
+        if not league_source.empty:
+            x_min, x_max = league_source["pct_uast_fgm"].min(), league_source["pct_uast_fgm"].max()
+            x_pad = (x_max - x_min) * 0.05
+            scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
+
+        if not vline_source.empty:
+            vline_x = vline_source["pct_uast_fgm"].mean()
+            hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{season_text} ({qualifier_text})"
+            scatter_fig.add_trace(go.Scatter(
+                x=[vline_x] * 50,
+                y=np.linspace(y0, y1, 50),
+                mode="lines",
+                line=dict(dash="dash", color="#898781"),
+                hoverinfo="text",
+                hovertext=hover_label,
+                showlegend=False,
+            ))
+        scatter_fig.update_traces(
+            marker=dict(size=8, opacity=0.75),
+            hovertemplate=(
+                "<b>%{hovertext}</b> (%{customdata[1]})<br>"
+                "FGM% UAST: %{x:.3f}<br>Scoring+: %{y:.0f}<extra></extra>"
+            ),
+            selector=dict(mode="markers"),
+        )
+
+        scatter_event = st.plotly_chart(
+            scatter_fig,
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="points",
+            key="scatter_chart",
+        )
+        handle_scatter_click(scatter_event)
+
     else:
-        vline_source = qualified_df
-        season_text = season_range_label(qualified_df["season_end_year"].unique())
+        x_max_dev = (league_source["ts_plus"] - 100).abs().max() if not league_source.empty else 10
+        y_max_dev = (league_source["pts_plus"] - 100).abs().max() if not league_source.empty else 10
+        x0, x1 = 100 - x_max_dev * 1.1, 100 + x_max_dev * 1.1
+        y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
 
-    y_max_dev = (league_source["scoring_plus"] - 100).abs().max() if not league_source.empty else 10
-    y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
-    scatter_fig.update_yaxes(range=[y0, y1])
+        if not table_source.empty:
+            min_val = table_source["scoring_plus"].min()
+            max_val = table_source["scoring_plus"].max()
+        else:
+            min_val = max_val = 100
+        marker_colors = [
+            scoring_plus_gradient_color(v, min_val, max_val) for v in table_source["scoring_plus"]
+        ]
 
-    if not league_source.empty:
-        x_min, x_max = league_source["pct_uast_fgm"].min(), league_source["pct_uast_fgm"].max()
-        x_pad = (x_max - x_min) * 0.05
-        scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
+        scatter_fig = px.scatter(
+            table_source,
+            x="ts_plus",
+            y="pts_plus",
+            hover_name="player_name",
+            custom_data=["player_id", "season", "scoring_plus"],
+            labels={"ts_plus": "TS+", "pts_plus": "PTS+"},
+        )
+        scatter_fig.update_traces(
+            marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
+            hovertemplate=(
+                "<b>%{hovertext}</b> (%{customdata[1]})<br>"
+                "Scoring+: %{customdata[2]:.0f}<br>"
+                "PTS+: %{y:.0f}<br>"
+                "TS+: %{x:.0f}<extra></extra>"
+            ),
+        )
+        scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+        scatter_fig.add_vline(x=100, line_dash="dash", line_color="#898781")
+        scatter_fig.update_xaxes(range=[x0, x1])
+        scatter_fig.update_yaxes(range=[y0, y1])
 
-    if not vline_source.empty:
-        vline_x = vline_source["pct_uast_fgm"].mean()
-        hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{season_text} ({qualifier_text})"
-        scatter_fig.add_trace(go.Scatter(
-            x=[vline_x] * 50,
-            y=np.linspace(y0, y1, 50),
-            mode="lines",
-            line=dict(dash="dash", color="#898781"),
-            hoverinfo="text",
-            hovertext=hover_label,
-            showlegend=False,
-        ))
-    scatter_fig.update_traces(marker=dict(size=8, opacity=0.75), selector=dict(mode="markers"))
-
-    scatter_event = st.plotly_chart(
-        scatter_fig,
-        use_container_width=True,
-        on_select="rerun",
-        selection_mode="points",
-        key="scatter_chart",
-    )
-
-    clicked_points = scatter_event.get("selection", {}).get("points", []) if scatter_event else []
-    if clicked_points:
-        customdata = clicked_points[0].get("customdata")
-        if customdata:
-            clicked_player_id = customdata[0]
-            if clicked_player_id != st.session_state.selected_player_id:
-                st.session_state.selected_player_id = clicked_player_id
-                st.session_state.player_search_term = ""
-                st.session_state.season_choice = "All Seasons"
-                st.rerun()
+        scatter_event = st.plotly_chart(
+            scatter_fig,
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode="points",
+            key="scatter_chart_ts_pts",
+        )
+        handle_scatter_click(scatter_event)
 
 
 # --- Compare page -----------------------------------------------------------
@@ -471,11 +573,17 @@ def player_season_widget(df: pd.DataFrame, player_id: int, key_prefix: str) -> s
     return st.selectbox("Season", seasons["season"].tolist(), key=f"{key_prefix}_season_{player_id}")
 
 
-def render_compare_table(row: pd.Series | None, other_row: pd.Series | None) -> str:
+def render_compare_table(row: pd.Series | None, other_row: pd.Series | None, accent_color: str) -> str:
+    bg_color = hex_to_rgba(accent_color, 0.10)
     if row is None:
-        return "<div style='opacity:0.6; padding:0.5rem 0;'>Select a player and season above.</div>"
+        return (
+            f"<div style='opacity:0.6; padding:0.75rem; background-color:{bg_color}; "
+            f"border-radius:10px;'>Select a player and season above.</div>"
+        )
 
-    lines = ["<table style='width:100%; border-collapse:collapse;'>"]
+    lines = [
+        f"<table style='width:100%; border-collapse:collapse; background-color:{bg_color};'>"
+    ]
     for col, label, kind in COMPARE_ROWS:
         value_display = format_compare_value(kind, row[col])
         bold = (
@@ -496,13 +604,87 @@ def render_compare_table(row: pd.Series | None, other_row: pd.Series | None) -> 
     profile_color = uast_color(row["uast_rating"])
     lines.append(
         "<tr>"
-        "<td style='padding:4px 10px; opacity:0.7;'>Scoring Profile</td>"
-        f"<td style='padding:4px 10px; color:{profile_color}; font-weight:700;'>"
+        "<td style='padding:4px 10px; border-bottom:1px solid rgba(128,128,128,0.25); opacity:0.7;'>"
+        "Scoring Profile</td>"
+        f"<td style='padding:4px 10px; border-bottom:1px solid rgba(128,128,128,0.25); "
+        f"color:{profile_color}; font-weight:700;'>"
         f"{html.escape(str(row['profile']))}</td>"
+        "</tr>"
+    )
+    lines.append(
+        "<tr>"
+        "<td colspan='2' style='padding:8px 10px;'>"
+        f"<img src='{uast_number_line_svg(row['uast_rating'])}' style='width:100%; height:auto; display:block;' />"
+        "</td>"
         "</tr>"
     )
     lines.append("</table>")
     return "".join(lines)
+
+
+def render_compare_scatter(
+    df: pd.DataFrame, p1_row: pd.Series | None, p2_row: pd.Series | None, plot_choice: str
+) -> None:
+    qualified_df = df[df["qualified"]]
+
+    if plot_choice == "FGM% UAST vs Scoring+":
+        x_col, y_col = "pct_uast_fgm", "scoring_plus"
+        x_label, y_label = "FGM% UAST", "Scoring+"
+        x_fmt, y_fmt = ":.3f", ":.0f"
+    else:
+        x_col, y_col = "ts_plus", "pts_plus"
+        x_label, y_label = "TS+", "PTS+"
+        x_fmt, y_fmt = ":.0f", ":.0f"
+
+    scatter_fig = go.Figure()
+    scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+
+    # Fixed axis ranges matching Home's default view (All Seasons, qualified players only)
+    # so the plot doesn't jump around as different players/seasons are compared.
+    y_max_dev = (qualified_df[y_col] - 100).abs().max()
+    y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+    scatter_fig.update_yaxes(range=[y0, y1], title=y_label)
+
+    if plot_choice == "FGM% UAST vs Scoring+":
+        x_min, x_max = qualified_df[x_col].min(), qualified_df[x_col].max()
+        x_pad = (x_max - x_min) * 0.05
+        scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad], title=x_label)
+
+        vline_x = qualified_df[x_col].mean()
+        season_text = season_range_label(qualified_df["season_end_year"].unique())
+        hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{season_text} (Qualified Players)"
+        scatter_fig.add_trace(go.Scatter(
+            x=[vline_x] * 50,
+            y=np.linspace(y0, y1, 50),
+            mode="lines",
+            line=dict(dash="dash", color="#898781"),
+            hoverinfo="text",
+            hovertext=hover_label,
+            showlegend=False,
+        ))
+    else:
+        x_max_dev = (qualified_df[x_col] - 100).abs().max()
+        x0, x1 = 100 - x_max_dev * 1.1, 100 + x_max_dev * 1.1
+        scatter_fig.update_xaxes(range=[x0, x1], title=x_label)
+        scatter_fig.add_vline(x=100, line_dash="dash", line_color="#898781")
+
+    for row, color in [(p1_row, PLAYER1_COLOR), (p2_row, PLAYER2_COLOR)]:
+        if row is None:
+            continue
+        scatter_fig.add_trace(go.Scatter(
+            x=[row[x_col]],
+            y=[row[y_col]],
+            mode="markers",
+            marker=dict(size=13, color=color, line=dict(width=1.5, color="white")),
+            name=f"{row['player_name']} ({row['season']})",
+            hovertemplate=(
+                f"<b>{html.escape(str(row['player_name']))}</b> ({row['season']})<br>"
+                f"{x_label}: %{{x{x_fmt}}}<br>{y_label}: %{{y{y_fmt}}}<extra></extra>"
+            ),
+        ))
+
+    scatter_fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(scatter_fig, use_container_width=True, key=f"compare_scatter_chart_{plot_choice}")
 
 
 def render_compare(df: pd.DataFrame) -> None:
@@ -529,11 +711,19 @@ def render_compare(df: pd.DataFrame) -> None:
 
     st.divider()
 
-    table_col1, table_col2 = st.columns(2)
+    table_col1, scatter_col, table_col2 = st.columns([1, 1.6, 1])
     with table_col1:
-        st.markdown(render_compare_table(p1_row, p2_row), unsafe_allow_html=True)
+        st.markdown(render_compare_table(p1_row, p2_row, PLAYER1_COLOR), unsafe_allow_html=True)
+    with scatter_col:
+        plot_choice = st.selectbox(
+            "Scatter plot",
+            ["FGM% UAST vs Scoring+", "TS+ vs PTS+"],
+            key="compare_scatter_choice",
+            label_visibility="collapsed",
+        )
+        render_compare_scatter(df, p1_row, p2_row, plot_choice)
     with table_col2:
-        st.markdown(render_compare_table(p2_row, p1_row), unsafe_allow_html=True)
+        st.markdown(render_compare_table(p2_row, p1_row, PLAYER2_COLOR), unsafe_allow_html=True)
 
 
 df = load_player_profile()
