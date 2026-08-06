@@ -1,10 +1,10 @@
 #!/usr/bin/env /opt/anaconda3/bin/python3
 """
-Streamlit app for exploring player_profile: era-adjusted scoring metrics
-(scoring+, pts+, ts+) alongside traditional counting stats, filterable by
-season and scoring-title qualification.
+Streamlit app for exploring player_profile and team_profile: era-adjusted
+scoring metrics (scoring+, pts+, ts+) alongside traditional counting stats,
+filterable by season and scoring-title qualification.
 
-Run with: /opt/anaconda3/bin/streamlit run player_profile_app.py
+Run with: /opt/anaconda3/bin/streamlit run scoring_plus_app.py
 """
 
 import base64
@@ -28,6 +28,12 @@ def load_player_profile(db_path: str = DB_PATH) -> pd.DataFrame:
         df = pd.read_sql("SELECT * FROM player_profile", con)
     df["qualified"] = df["qualified"].astype(bool)
     return df
+
+
+@st.cache_data
+def load_team_profile(db_path: str = DB_PATH) -> pd.DataFrame:
+    with sqlite3.connect(db_path) as con:
+        return pd.read_sql("SELECT * FROM team_profile", con)
 
 
 def uast_color(rating: float) -> str:
@@ -95,6 +101,17 @@ def hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
+def render_stat_box(label: str, value, color: str) -> str:
+    bg_color = hex_to_rgba(color, 0.15)
+    return (
+        f"<div style='background-color:{bg_color}; border-radius:10px; padding:0.75rem 1rem; "
+        f"text-align:center;'>"
+        f"<div style='font-size:0.875rem; opacity:0.7;'>{html.escape(label)}</div>"
+        f"<div style='font-size:2rem; font-weight:600; line-height:1.25;'>{value}</div>"
+        f"</div>"
+    )
+
+
 def season_range_label(season_end_years) -> str:
     return f"{min(season_end_years) - 1}-{max(season_end_years)}"
 
@@ -154,6 +171,40 @@ def scoring_plus_gradient_color(value: float, min_val: float, max_val: float) ->
         for i in range(3)
     )
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+
+def rank_gradient_color(rank: int, n_teams: int) -> str:
+    """Diverging red<->neutral<->green scale by league rank: dark green at rank 1,
+    dark red at rank n_teams, very light green/red just above/below the middle.
+    """
+    mid = (n_teams + 1) / 2
+    if rank <= mid:
+        span = max(mid - 1, 1e-9)
+        t = min(max((mid - rank) / span, 0.0), 1.0)
+        target = SCORING_PLUS_GREEN_RGB
+    else:
+        span = max(n_teams - mid, 1e-9)
+        t = min(max((rank - mid) / span, 0.0), 1.0)
+        target = SCORING_PLUS_RED_RGB
+    rgb = tuple(
+        round(SCORING_PLUS_NEUTRAL_RGB[i] + (target[i] - SCORING_PLUS_NEUTRAL_RGB[i]) * t)
+        for i in range(3)
+    )
+    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+
+def render_ranked_metric(label: str, value: str, rank: int, n_teams: int) -> str:
+    color = rank_gradient_color(rank, n_teams)
+    return (
+        "<div style='text-align:center;'>"
+        f"<div style='font-size:0.875rem; opacity:0.7;'>{html.escape(label)}</div>"
+        f"<div style='font-size:2rem; font-weight:600; line-height:1.25; color:{color};'>{value}</div>"
+        "<div style='margin-top:0.25rem; margin-bottom:0.75rem;'>"
+        f"<span style='background-color:rgba(128,128,128,0.15); border-radius:999px; "
+        f"padding:2px 10px; font-size:0.8rem; opacity:0.85;'>Rank {rank} of {n_teams}</span>"
+        "</div>"
+        "</div>"
+    )
 
 
 def render_top_nav(current_page: str) -> None:
@@ -748,17 +799,44 @@ def render_compare(df: pd.DataFrame) -> None:
 
 # --- Team Breakdown page -----------------------------------------------------
 
+# The 2005-2007 Hornets franchise's own name contains a "/", so it can't be told
+# apart from a traded player's "TeamA/TeamB" combo by splitting on "/" alone.
+HORNETS_RELOCATION_NAME = "NEW ORLEANS/OKLAHOMA CITY HORNETS"
+
+
+def split_team_combo(combo: str) -> list[str]:
+    if HORNETS_RELOCATION_NAME in combo:
+        remainder = combo.replace(HORNETS_RELOCATION_NAME, "\x00")
+        return [HORNETS_RELOCATION_NAME if part == "\x00" else part for part in remainder.split("/") if part]
+    return combo.split("/")
+
+
 @st.cache_data
 def team_names(df: pd.DataFrame) -> list[str]:
     # team_name holds a "/"-joined combo (e.g. "MIAMI HEAT/GOLDEN STATE WARRIORS") for
     # players traded mid-season, so the dropdown is built from the individual franchise
     # names rather than the raw column values.
-    all_teams = {team for combo in df["team_name"].dropna().unique() for team in combo.split("/")}
+    all_teams = {team for combo in df["team_name"].dropna().unique() for team in split_team_combo(combo)}
     return sorted(all_teams)
 
 
-def render_team_breakdown(df: pd.DataFrame) -> None:
+# The only known team-name spelling difference between player_profile (basketball-reference)
+# and team_profile (nba_api): player_profile -> team_profile.
+TEAM_PROFILE_NAME_ALIASES = {"LOS ANGELES CLIPPERS": "LA CLIPPERS"}
+
+
+def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
     render_top_nav("Team Breakdown")
+
+    # Centers st.metric's label/value/delta so they line up with render_stat_box's
+    # centered text above them.
+    st.markdown(
+        "<style>"
+        "[data-testid='stMetric'] { text-align: center; }"
+        "[data-testid='stMetricLabel'] { display: block; text-align: center; }"
+        "</style>",
+        unsafe_allow_html=True,
+    )
 
     team_col, season_col = st.columns(2)
     team_choice = team_col.selectbox("Team", team_names(df), key="team_breakdown_team")
@@ -781,12 +859,75 @@ def render_team_breakdown(df: pd.DataFrame) -> None:
 
     team_season_df = df[team_mask & (df["season"] == season_choice)]
     team_season_source = team_season_df[team_season_df["qualified"]] if qualified_only else team_season_df
+    season_end_year = int(team_season_df["season_end_year"].iloc[0])
 
-    profile_counts = team_season_source["profile"].value_counts()
+    team_profile_season = team_profile_df[team_profile_df["season_end_year"] == season_end_year]
+    team_profile_names_upper = team_profile_season["team_name"].str.upper()
+    # Try the exact name first; some franchises' team_profile spelling only diverges
+    # from player_profile's in certain eras (e.g. the Clippers' 2016 rebrand), so an
+    # alias should only be used when the direct name isn't found for that season.
+    team_profile_match = team_profile_season[team_profile_names_upper == team_choice]
+    if team_profile_match.empty and team_choice in TEAM_PROFILE_NAME_ALIASES:
+        alias = TEAM_PROFILE_NAME_ALIASES[team_choice]
+        team_profile_match = team_profile_season[team_profile_names_upper == alias]
+    team_profile_row = team_profile_match.iloc[0] if not team_profile_match.empty else None
+
+    if team_profile_row is not None:
+        finishers, balanced, creators = (
+            int(team_profile_row["Finishers"]), int(team_profile_row["Balanced"]), int(team_profile_row["Creators"])
+        )
+    else:
+        # Falls back to a live count if team_profile has no matching row (shouldn't
+        # happen given the two tables' verified season/name coverage).
+        profile_counts = team_season_source["profile"].value_counts()
+        finishers, balanced, creators = (
+            int(profile_counts.get("Finisher", 0)),
+            int(profile_counts.get("Balanced", 0)),
+            int(profile_counts.get("Creator", 0)),
+        )
+
     finisher_col, balanced_col, creator_col = st.columns(3)
-    finisher_col.metric("Finishers", int(profile_counts.get("Finisher", 0)))
-    balanced_col.metric("Balanced", int(profile_counts.get("Balanced", 0)))
-    creator_col.metric("Creators", int(profile_counts.get("Creator", 0)))
+    finisher_col.markdown(
+        render_stat_box("Finishers", finishers, PROFILE_COLORS["Finisher"]), unsafe_allow_html=True
+    )
+    balanced_col.markdown(
+        render_stat_box("Balanced", balanced, PROFILE_COLORS["Balanced"]), unsafe_allow_html=True
+    )
+    creator_col.markdown(
+        render_stat_box("Creators", creators, PROFILE_COLORS["Creator"]), unsafe_allow_html=True
+    )
+
+    if team_profile_row is not None:
+        n_teams = len(team_profile_season)
+
+        st.caption("Team Scoring+ / PTS+ / TS+ (league rank that season)")
+        sp_col, pp_col, tsp_col = st.columns(3)
+        sp_col.markdown(
+            render_ranked_metric(
+                "Team Scoring+", f"{team_profile_row['team_scoring_plus']:.0f}",
+                int(team_profile_row["team_scoring_plus_rank"]), n_teams,
+            ),
+            unsafe_allow_html=True,
+        )
+        pp_col.markdown(
+            render_ranked_metric(
+                "Team PTS+", f"{team_profile_row['team_pts_plus']:.0f}",
+                int(team_profile_row["team_pts_plus_rank"]), n_teams,
+            ),
+            unsafe_allow_html=True,
+        )
+        tsp_col.markdown(
+            render_ranked_metric(
+                "Team TS+", f"{team_profile_row['team_ts_plus']:.0f}",
+                int(team_profile_row["team_ts_plus_rank"]), n_teams,
+            ),
+            unsafe_allow_html=True,
+        )
+
+        record_col, off_rating_col, ts_pct_col = st.columns(3)
+        record_col.metric("Record", f"{int(team_profile_row['w'])}-{int(team_profile_row['l'])}")
+        off_rating_col.metric("Offensive Rating", f"{team_profile_row['off_rating']:.1f}")
+        ts_pct_col.metric("Team TS%", f"{team_profile_row['ts_pct']:.3f}")
 
     st.divider()
 
@@ -887,11 +1028,12 @@ def render_team_breakdown(df: pd.DataFrame) -> None:
 
 
 df = load_player_profile()
+team_profile_df = load_team_profile()
 
 home_page = st.Page(lambda: render_home(df), title="Home", url_path="home", default=True)
 compare_page = st.Page(lambda: render_compare(df), title="Compare", url_path="compare")
 team_breakdown_page = st.Page(
-    lambda: render_team_breakdown(df), title="Team Breakdown", url_path="team-breakdown"
+    lambda: render_team_breakdown(df, team_profile_df), title="Team Breakdown", url_path="team-breakdown"
 )
 
 st.navigation([home_page, compare_page, team_breakdown_page], position="hidden").run()
