@@ -160,7 +160,7 @@ def render_top_nav(current_page: str) -> None:
     st.title("NBA Scoring+ Explorer")
     choice = st.pills(
         "Navigation",
-        ["Home", "Compare"],
+        ["Home", "Compare", "Team Breakdown"],
         default=current_page,
         key="top_nav_pills",
         label_visibility="collapsed",
@@ -169,7 +169,88 @@ def render_top_nav(current_page: str) -> None:
         st.switch_page(home_page)
     elif choice == "Compare" and current_page != "Compare":
         st.switch_page(compare_page)
+    elif choice == "Team Breakdown" and current_page != "Team Breakdown":
+        st.switch_page(team_breakdown_page)
     st.divider()
+
+
+def render_player_stats_table(
+    table_source: pd.DataFrame, sort_by_season: bool = False, show_team_season: bool = True
+) -> None:
+    if show_team_season:
+        lead_cols = ["team_abbreviation", "season"]
+        lead_rename = {"team_abbreviation": "Team", "season": "Season"}
+        lead_labels = ["Team", "Season"]
+    else:
+        lead_cols = ["games_played", "minutes_per_game"]
+        lead_rename = {"games_played": "GP", "minutes_per_game": "MPG"}
+        lead_labels = ["GP", "MPG"]
+
+    table_df = table_source[[
+        "player_name", *lead_cols, "scoring_plus", "pts_plus", "ts_plus",
+        "points_per_game", "per_100_pts", "true_shooting_percentage", "pct_uast_fgm",
+        "uast_rating", "profile",
+    ]].rename(columns={
+        "player_name": "Player",
+        **lead_rename,
+        "scoring_plus": "Scoring+",
+        "pts_plus": "PTS+",
+        "ts_plus": "TS+",
+        "points_per_game": "PPG",
+        "per_100_pts": "PTS per 100",
+        "true_shooting_percentage": "TS%",
+        "pct_uast_fgm": "FGM% UAST",
+        "profile": "Scoring Profile",
+    })
+    table_df["UAST Rating"] = table_df["uast_rating"].apply(uast_number_line_svg)
+    table_df["Scoring Profile"] = [
+        scoring_profile_badge_svg(profile, rating)
+        for profile, rating in zip(table_df["Scoring Profile"], table_df["uast_rating"])
+    ]
+    table_df = table_df[[
+        "Player", *lead_labels, "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", "TS%",
+        "FGM% UAST", "UAST Rating", "Scoring Profile",
+    ]]
+    if sort_by_season:
+        table_df = table_df.sort_values("Season", ascending=True).reset_index(drop=True)
+    else:
+        table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
+
+    styled_table_df = (
+        table_df.style
+        .format({
+            "GP": "{:.0f}",
+            "MPG": "{:.1f}",
+            "Scoring+": "{:.0f}",
+            "PTS+": "{:.0f}",
+            "TS+": "{:.0f}",
+            "PPG": "{:.1f}",
+            "PTS per 100": "{:.1f}",
+            "TS%": "{:.3f}",
+            "FGM% UAST": "{:.3f}",
+        })
+        .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
+    )
+
+    st.dataframe(
+        styled_table_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Player": st.column_config.TextColumn(width="medium"),
+            "GP": st.column_config.NumberColumn(format="%d", width="small"),
+            "MPG": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
+            "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "TS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "PTS per 100": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "UAST Rating": st.column_config.ImageColumn(width="medium"),
+            "Scoring Profile": st.column_config.ImageColumn(width="medium"),
+        },
+    )
 
 
 def render_home(df: pd.DataFrame) -> None:
@@ -265,71 +346,6 @@ def render_home(df: pd.DataFrame) -> None:
     table_source = league_source
     if selected_player_id is not None:
         table_source = table_source[table_source["player_id"] == selected_player_id]
-
-    table_df = table_source[[
-        "player_name", "team_abbreviation", "season", "scoring_plus", "pts_plus", "ts_plus",
-        "points_per_game", "per_100_pts", "true_shooting_percentage", "pct_uast_fgm",
-        "uast_rating", "profile",
-    ]].rename(columns={
-        "player_name": "Player",
-        "team_abbreviation": "Team",
-        "season": "Season",
-        "scoring_plus": "Scoring+",
-        "pts_plus": "PTS+",
-        "ts_plus": "TS+",
-        "points_per_game": "PPG",
-        "per_100_pts": "PTS per 100",
-        "true_shooting_percentage": "TS%",
-        "pct_uast_fgm": "FGM% UAST",
-        "profile": "Scoring Profile",
-    })
-    table_df["UAST Rating"] = table_df["uast_rating"].apply(uast_number_line_svg)
-    table_df["Scoring Profile"] = [
-        scoring_profile_badge_svg(profile, rating)
-        for profile, rating in zip(table_df["Scoring Profile"], table_df["uast_rating"])
-    ]
-    table_df = table_df[[
-        "Player", "Team", "Season", "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", "TS%",
-        "FGM% UAST", "UAST Rating", "Scoring Profile",
-    ]]
-    if selected_player_id is not None:
-        table_df = table_df.sort_values("Season", ascending=True).reset_index(drop=True)
-    else:
-        table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
-
-    styled_table_df = (
-        table_df.style
-        .format({
-            "Scoring+": "{:.0f}",
-            "PTS+": "{:.0f}",
-            "TS+": "{:.0f}",
-            "PPG": "{:.1f}",
-            "PTS per 100": "{:.1f}",
-            "TS%": "{:.3f}",
-            "FGM% UAST": "{:.3f}",
-        })
-        .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
-    )
-
-    st.dataframe(
-        styled_table_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Player": st.column_config.TextColumn(width="medium"),
-            "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
-            "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
-            "TS+": st.column_config.NumberColumn(format="%d", width="small"),
-            "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
-            "PTS per 100": st.column_config.NumberColumn(format="%.1f", width="small"),
-            "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
-            "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
-            "UAST Rating": st.column_config.ImageColumn(width="medium"),
-            "Scoring Profile": st.column_config.ImageColumn(width="medium"),
-        },
-    )
-
-    st.divider()
 
     title_col, dropdown_col = st.columns([3, 1])
     plot_choice = dropdown_col.selectbox(
@@ -476,6 +492,10 @@ def render_home(df: pd.DataFrame) -> None:
             key="scatter_chart_ts_pts",
         )
         handle_scatter_click(scatter_event)
+
+    st.divider()
+
+    render_player_stats_table(table_source, sort_by_season=selected_player_id is not None)
 
 
 # --- Compare page -----------------------------------------------------------
@@ -726,9 +746,152 @@ def render_compare(df: pd.DataFrame) -> None:
         st.markdown(render_compare_table(p2_row, p1_row, PLAYER2_COLOR), unsafe_allow_html=True)
 
 
+# --- Team Breakdown page -----------------------------------------------------
+
+@st.cache_data
+def team_names(df: pd.DataFrame) -> list[str]:
+    # team_name holds a "/"-joined combo (e.g. "MIAMI HEAT/GOLDEN STATE WARRIORS") for
+    # players traded mid-season, so the dropdown is built from the individual franchise
+    # names rather than the raw column values.
+    all_teams = {team for combo in df["team_name"].dropna().unique() for team in combo.split("/")}
+    return sorted(all_teams)
+
+
+def render_team_breakdown(df: pd.DataFrame) -> None:
+    render_top_nav("Team Breakdown")
+
+    team_col, season_col = st.columns(2)
+    team_choice = team_col.selectbox("Team", team_names(df), key="team_breakdown_team")
+
+    team_mask = df["team_name"].str.contains(team_choice, regex=False, na=False)
+    seasons_for_team = (
+        df[team_mask][["season_end_year", "season"]]
+        .drop_duplicates()
+        .sort_values("season_end_year", ascending=False)
+    )
+    season_choice = season_col.selectbox(
+        "Season", seasons_for_team["season"].tolist(), key=f"team_breakdown_season_{team_choice}"
+    )
+
+    qualified_only = st.checkbox(
+        "Show qualified players only", value=False, key="team_breakdown_qualified_only"
+    )
+
+    st.subheader(f"{team_choice.title()} {season_choice} Breakdown")
+
+    team_season_df = df[team_mask & (df["season"] == season_choice)]
+    team_season_source = team_season_df[team_season_df["qualified"]] if qualified_only else team_season_df
+
+    profile_counts = team_season_source["profile"].value_counts()
+    finisher_col, balanced_col, creator_col = st.columns(3)
+    finisher_col.metric("Finishers", int(profile_counts.get("Finisher", 0)))
+    balanced_col.metric("Balanced", int(profile_counts.get("Balanced", 0)))
+    creator_col.metric("Creators", int(profile_counts.get("Creator", 0)))
+
+    st.divider()
+
+    title_col, dropdown_col = st.columns([3, 1])
+    plot_choice = dropdown_col.selectbox(
+        "Scatter plot",
+        ["FGM% UAST vs Scoring+", "TS+ vs PTS+"],
+        key="team_breakdown_scatter_choice",
+        label_visibility="collapsed",
+    )
+    title_col.subheader(plot_choice)
+    title_col.caption(f"{'Qualified' if qualified_only else 'All'} Players — {season_choice}")
+
+    # The average/axis reference always compares against the whole league's
+    # scoring-title-qualified players for the selected season.
+    season_qualified_df = df[(df["season"] == season_choice) & df["qualified"]]
+
+    if plot_choice == "FGM% UAST vs Scoring+":
+        scatter_fig = px.scatter(
+            team_season_source,
+            x="pct_uast_fgm",
+            y="scoring_plus",
+            color="profile",
+            color_discrete_map=PROFILE_COLORS,
+            hover_name="player_name",
+            labels={"pct_uast_fgm": "FGM% UAST", "scoring_plus": "Scoring+", "profile": "Scoring Profile"},
+        )
+        scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+
+        y_max_dev = (season_qualified_df["scoring_plus"] - 100).abs().max() if not season_qualified_df.empty else 10
+        y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+        scatter_fig.update_yaxes(range=[y0, y1])
+
+        if not season_qualified_df.empty:
+            x_min, x_max = season_qualified_df["pct_uast_fgm"].min(), season_qualified_df["pct_uast_fgm"].max()
+            x_pad = (x_max - x_min) * 0.05
+            scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
+
+            vline_x = season_qualified_df["pct_uast_fgm"].mean()
+            hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{season_choice} (Qualified Players)"
+            scatter_fig.add_trace(go.Scatter(
+                x=[vline_x] * 50,
+                y=np.linspace(y0, y1, 50),
+                mode="lines",
+                line=dict(dash="dash", color="#898781"),
+                hoverinfo="text",
+                hovertext=hover_label,
+                showlegend=False,
+            ))
+        scatter_fig.update_traces(
+            marker=dict(size=8, opacity=0.75),
+            hovertemplate="<b>%{hovertext}</b><br>FGM% UAST: %{x:.3f}<br>Scoring+: %{y:.0f}<extra></extra>",
+            selector=dict(mode="markers"),
+        )
+        st.plotly_chart(scatter_fig, use_container_width=True, key="team_breakdown_scatter_fgm")
+
+    else:
+        x_max_dev = (season_qualified_df["ts_plus"] - 100).abs().max() if not season_qualified_df.empty else 10
+        y_max_dev = (season_qualified_df["pts_plus"] - 100).abs().max() if not season_qualified_df.empty else 10
+        x0, x1 = 100 - x_max_dev * 1.1, 100 + x_max_dev * 1.1
+        y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+
+        if not team_season_source.empty:
+            min_val = team_season_source["scoring_plus"].min()
+            max_val = team_season_source["scoring_plus"].max()
+        else:
+            min_val = max_val = 100
+        marker_colors = [
+            scoring_plus_gradient_color(v, min_val, max_val) for v in team_season_source["scoring_plus"]
+        ]
+
+        scatter_fig = px.scatter(
+            team_season_source,
+            x="ts_plus",
+            y="pts_plus",
+            hover_name="player_name",
+            custom_data=["scoring_plus"],
+            labels={"ts_plus": "TS+", "pts_plus": "PTS+"},
+        )
+        scatter_fig.update_traces(
+            marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
+            hovertemplate=(
+                "<b>%{hovertext}</b><br>"
+                "Scoring+: %{customdata[0]:.0f}<br>"
+                "PTS+: %{y:.0f}<br>"
+                "TS+: %{x:.0f}<extra></extra>"
+            ),
+        )
+        scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+        scatter_fig.add_vline(x=100, line_dash="dash", line_color="#898781")
+        scatter_fig.update_xaxes(range=[x0, x1])
+        scatter_fig.update_yaxes(range=[y0, y1])
+        st.plotly_chart(scatter_fig, use_container_width=True, key="team_breakdown_scatter_ts_pts")
+
+    st.divider()
+
+    render_player_stats_table(team_season_source, show_team_season=False)
+
+
 df = load_player_profile()
 
 home_page = st.Page(lambda: render_home(df), title="Home", url_path="home", default=True)
 compare_page = st.Page(lambda: render_compare(df), title="Compare", url_path="compare")
+team_breakdown_page = st.Page(
+    lambda: render_team_breakdown(df), title="Team Breakdown", url_path="team-breakdown"
+)
 
-st.navigation([home_page, compare_page], position="hidden").run()
+st.navigation([home_page, compare_page, team_breakdown_page], position="hidden").run()
