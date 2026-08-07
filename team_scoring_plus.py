@@ -31,6 +31,9 @@ def compute_team_scoring_plus(
         on="season_end_year",
     )
 
+    df["pct_uast_fgm"] = 1 - df["ast_pct"]
+    df["league_pct_uast_fgm"] = 1 - df["league_ast_pct"]
+
     df["team_pts_plus"] = (df["off_rating"] / df["league_off_rating"]) * 100
     df["team_ts_plus"] = (df["ts_pct"] / df["league_ts_pct"]) * 100
     df["team_scoring_plus"] = (
@@ -46,8 +49,8 @@ def compute_team_scoring_plus(
 
     return df[[
         "season_end_year", "team_id", "team_name", "gp", "w", "l", "w_pct",
-        "off_rating", "ast_pct", "ts_pct",
-        "league_off_rating", "league_ast_pct", "league_ts_pct",
+        "off_rating", "ast_pct", "pct_uast_fgm", "ts_pct",
+        "league_off_rating", "league_ast_pct", "league_pct_uast_fgm", "league_ts_pct",
         "team_scoring_plus", "team_pts_plus", "team_ts_plus",
         "team_scoring_plus_rank", "team_pts_plus_rank", "team_ts_plus_rank",
     ]]

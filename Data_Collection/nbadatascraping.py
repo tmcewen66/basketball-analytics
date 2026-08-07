@@ -16,7 +16,7 @@ import time
 import pandas as pd
 from nba_api.stats.endpoints import leaguedashplayerstats, leaguedashteamstats
 
-import br_to_nba_mapping
+import Data_Collection.br_to_nba_mapping as br_to_nba_mapping
 
 DB_PATH = "nba_stats.db"
 TABLE_NAME = "per_100_stats"
