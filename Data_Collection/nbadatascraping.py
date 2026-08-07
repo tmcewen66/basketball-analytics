@@ -3,7 +3,8 @@
 Fetches per-100-possessions, scoring splits, and advanced stats for every
 NBA player and team from 2000-01 through 2025-26 using the nba_api package
 and saves them to SQLite database tables 'per_100_stats', 'scoring_splits',
-'team_per_100_stats', and 'team_advanced_stats' in nba_stats.db.
+'team_per_100_stats', 'team_per_game_stats', and 'team_advanced_stats' in
+nba_stats.db.
 
 Rebuilds the BR-to-NBA slug mapping (br_to_nba_mapping.py) afterward, since
 saving per_100_stats/scoring_splits replaces those tables and drops their
@@ -22,6 +23,7 @@ DB_PATH = "nba_stats.db"
 TABLE_NAME = "per_100_stats"
 SCORING_TABLE_NAME = "scoring_splits"
 TEAM_TABLE_NAME = "team_per_100_stats"
+TEAM_PER_GAME_TABLE_NAME = "team_per_game_stats"
 TEAM_ADVANCED_TABLE_NAME = "team_advanced_stats"
 REQUEST_DELAY_SECONDS = 3
 
@@ -36,9 +38,9 @@ _PER_100_STAT_COLS = {
 }
 
 
-def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:
+def _rename_columns(df: pd.DataFrame, prefix: str = "per_100") -> pd.DataFrame:
     return df.rename(columns={
-        col: f"per_100_{col.lower()}" if col.upper() in _PER_100_STAT_COLS else col.lower()
+        col: f"{prefix}_{col.lower()}" if col.upper() in _PER_100_STAT_COLS else col.lower()
         for col in df.columns
     })
 
@@ -155,6 +157,41 @@ def save_team_stats_to_sqlite(df: pd.DataFrame, db_path: str = DB_PATH):
     print(f"Saved {len(df)} rows to {db_path} table '{TEAM_TABLE_NAME}'.")
 
 
+def fetch_team_per_game_season(end_year: int) -> pd.DataFrame:
+    df = leaguedashteamstats.LeagueDashTeamStats(
+        season=_season_str(end_year),
+        per_mode_detailed="PerGame",
+        timeout=60,
+    ).get_data_frames()[0]
+    df.insert(0, "season_end_year", end_year)
+    return df
+
+
+def fetch_all_team_per_game_seasons(seasons: list = SEASONS) -> pd.DataFrame:
+    frames = []
+    for year in seasons:
+        print(f"Fetching {_season_str(year)} team per-game stats...", end=" ", flush=True)
+        try:
+            df = fetch_team_per_game_season(year)
+            print(f"{len(df)} teams")
+            frames.append(df)
+        except Exception as e:
+            print(f"ERROR: {e}")
+        time.sleep(REQUEST_DELAY_SECONDS)
+    return pd.concat(frames, ignore_index=True)
+
+
+def save_team_per_game_stats_to_sqlite(df: pd.DataFrame, db_path: str = DB_PATH):
+    df = _rename_columns(df, prefix="per_game")
+    with sqlite3.connect(db_path) as con:
+        df.to_sql(TEAM_PER_GAME_TABLE_NAME, con, if_exists="replace", index=False)
+        con.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_team_per_game_team_season "
+            f"ON {TEAM_PER_GAME_TABLE_NAME} (team_id, season_end_year)"
+        )
+    print(f"Saved {len(df)} rows to {db_path} table '{TEAM_PER_GAME_TABLE_NAME}'.")
+
+
 def fetch_team_advanced_season(end_year: int) -> pd.DataFrame:
     df = leaguedashteamstats.LeagueDashTeamStats(
         season=_season_str(end_year),
@@ -207,6 +244,10 @@ if __name__ == "__main__":
     team_master_df = fetch_all_team_seasons()
     save_team_stats_to_sqlite(team_master_df)
     print(f"Done. {team_master_df['season_end_year'].nunique()} seasons of team stats loaded.")
+
+    team_per_game_master_df = fetch_all_team_per_game_seasons()
+    save_team_per_game_stats_to_sqlite(team_per_game_master_df)
+    print(f"Done. {team_per_game_master_df['season_end_year'].nunique()} seasons of team per-game stats loaded.")
 
     team_advanced_master_df = fetch_all_team_advanced_seasons()
     save_team_advanced_stats_to_sqlite(team_advanced_master_df)
