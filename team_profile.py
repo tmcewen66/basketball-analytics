@@ -20,9 +20,23 @@ def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.
             con,
         )
         player_profile = pd.read_sql(
-            "SELECT team_id, season_end_year, profile FROM player_profile", con
+            "SELECT team_id, season_end_year, profile, qualified FROM player_profile", con
         )
     return team_scoring_plus, team_per_100_stats, player_profile
+
+
+def _profile_counts(source: pd.DataFrame, columns: dict[str, str]) -> pd.DataFrame:
+    counts = (
+        source.groupby(["team_id", "season_end_year", "profile"])
+        .size()
+        .unstack("profile", fill_value=0)
+        .rename(columns=columns)
+        .reset_index()
+    )
+    for col in columns.values():
+        if col not in counts.columns:
+            counts[col] = 0
+    return counts[["team_id", "season_end_year", *columns.values()]]
 
 
 def compute_team_profile(
@@ -39,25 +53,19 @@ def compute_team_profile(
 
     # A traded player's single player_profile row carries their final team's team_id,
     # so they're counted toward that team only, not every team they played for.
-    profile_counts = (
-        player_profile.groupby(["team_id", "season_end_year", "profile"])
-        .size()
-        .unstack("profile", fill_value=0)
-        .rename(columns={"Finisher": "Finishers", "Balanced": "Balanced", "Creator": "Creators"})
-        .reset_index()
+    profile_counts = _profile_counts(
+        player_profile, {"Finisher": "finishers", "Balanced": "balanced", "Creator": "creators"}
     )
-    for col in ("Finishers", "Balanced", "Creators"):
-        if col not in profile_counts.columns:
-            profile_counts[col] = 0
+    qualified_profile_counts = _profile_counts(
+        player_profile[player_profile["qualified"].astype(bool)],
+        {"Finisher": "finishers_q", "Balanced": "balanced_q", "Creator": "creators_q"},
+    )
 
-    df = df.merge(
-        profile_counts[["team_id", "season_end_year", "Finishers", "Balanced", "Creators"]],
-        on=["team_id", "season_end_year"],
-        how="left",
-    )
-    df[["Finishers", "Balanced", "Creators"]] = (
-        df[["Finishers", "Balanced", "Creators"]].fillna(0).astype(int)
-    )
+    df = df.merge(profile_counts, on=["team_id", "season_end_year"], how="left")
+    df = df.merge(qualified_profile_counts, on=["team_id", "season_end_year"], how="left")
+
+    count_cols = ["finishers", "balanced", "creators", "finishers_q", "balanced_q", "creators_q"]
+    df[count_cols] = df[count_cols].fillna(0).astype(int)
 
     return df
 
