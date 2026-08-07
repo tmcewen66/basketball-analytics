@@ -33,7 +33,9 @@ def load_player_profile(db_path: str = DB_PATH) -> pd.DataFrame:
 @st.cache_data
 def load_team_profile(db_path: str = DB_PATH) -> pd.DataFrame:
     with sqlite3.connect(db_path) as con:
-        return pd.read_sql("SELECT * FROM team_profile", con)
+        df = pd.read_sql("SELECT * FROM team_profile", con)
+    df["season"] = (df["season_end_year"] - 1).astype(str) + "-" + df["season_end_year"].astype(str)
+    return df
 
 
 def uast_color(rating: float) -> str:
@@ -116,14 +118,21 @@ def season_range_label(season_end_years) -> str:
     return f"{min(season_end_years) - 1}-{max(season_end_years)}"
 
 
-def render_leaderboard(df: pd.DataFrame, metric_col: str, show_season: bool, n: int = 5) -> None:
+def render_leaderboard(
+    df: pd.DataFrame,
+    metric_col: str,
+    show_season: bool,
+    n: int = 5,
+    name_col: str = "player_name",
+    empty_message: str = "No qualified players.",
+) -> None:
     top = df.nlargest(n, metric_col).reset_index(drop=True)
     if top.empty:
-        st.write("No qualified players.")
+        st.write(empty_message)
         return
 
     def label(row: pd.Series) -> str:
-        name = html.escape(str(row["player_name"]))
+        name = html.escape(str(row[name_col]))
         if show_season:
             return f"{name} <span style='opacity:0.6; font-weight:400;'>({row['season']})</span>"
         return name
@@ -153,24 +162,36 @@ SCORING_PLUS_GREEN_RGB = (26, 122, 60)      # #1a7a3c
 SCORING_PLUS_RED_RGB = (192, 57, 43)        # #c0392b
 
 
-def scoring_plus_gradient_color(value: float, min_val: float, max_val: float) -> str:
-    """Diverging red<->neutral<->green scale centered at 100 (league average).
+def scoring_plus_gradient_color(value: float, min_val: float, max_val: float, center: float = 100) -> str:
+    """Diverging red<->neutral<->green scale centered at `center` (league average).
 
-    Darkest red at min_val, darkest green at max_val, neutral gray at exactly 100.
+    Darkest red at min_val, darkest green at max_val, neutral gray at exactly `center`.
     """
-    if value >= 100:
-        span = max(max_val - 100, 1e-9)
-        t = min(max((value - 100) / span, 0.0), 1.0)
+    if value >= center:
+        span = max(max_val - center, 1e-9)
+        t = min(max((value - center) / span, 0.0), 1.0)
         target = SCORING_PLUS_GREEN_RGB
     else:
-        span = max(100 - min_val, 1e-9)
-        t = min(max((100 - value) / span, 0.0), 1.0)
+        span = max(center - min_val, 1e-9)
+        t = min(max((center - value) / span, 0.0), 1.0)
         target = SCORING_PLUS_RED_RGB
     rgb = tuple(
         round(SCORING_PLUS_NEUTRAL_RGB[i] + (target[i] - SCORING_PLUS_NEUTRAL_RGB[i]) * t)
         for i in range(3)
     )
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+
+MARKER_SIZE_MIN = 8
+MARKER_SIZE_MAX = 28
+
+
+def marker_size_from_minutes(minutes: float, min_val: float, max_val: float) -> float:
+    """Scales minutes_played to a marker size between MARKER_SIZE_MIN and MARKER_SIZE_MAX."""
+    if max_val <= min_val:
+        return (MARKER_SIZE_MIN + MARKER_SIZE_MAX) / 2
+    t = min(max((minutes - min_val) / (max_val - min_val), 0.0), 1.0)
+    return MARKER_SIZE_MIN + (MARKER_SIZE_MAX - MARKER_SIZE_MIN) * t
 
 
 def rank_gradient_color(rank: int, n_teams: int) -> str:
@@ -207,19 +228,30 @@ def render_ranked_metric(label: str, value: str, rank: int, n_teams: int) -> str
     )
 
 
+def render_plain_metric(label: str, value: str) -> str:
+    return (
+        "<div style='text-align:center;'>"
+        f"<div style='font-size:0.875rem; opacity:0.7;'>{html.escape(label)}</div>"
+        f"<div style='font-size:2rem; font-weight:600; line-height:1.25;'>{value}</div>"
+        "</div>"
+    )
+
+
 def render_top_nav(current_page: str) -> None:
     st.title("NBA Scoring+ Explorer")
     choice = st.pills(
         "Navigation",
-        ["Home", "Compare", "Team Breakdown"],
+        ["Players", "Teams", "Team Breakdown", "Compare"],
         default=current_page,
         key="top_nav_pills",
         label_visibility="collapsed",
     )
-    if choice == "Home" and current_page != "Home":
+    if choice == "Players" and current_page != "Players":
         st.switch_page(home_page)
     elif choice == "Compare" and current_page != "Compare":
         st.switch_page(compare_page)
+    elif choice == "Teams" and current_page != "Teams":
+        st.switch_page(teams_page)
     elif choice == "Team Breakdown" and current_page != "Team Breakdown":
         st.switch_page(team_breakdown_page)
     st.divider()
@@ -305,7 +337,7 @@ def render_player_stats_table(
 
 
 def render_home(df: pd.DataFrame) -> None:
-    render_top_nav("Home")
+    render_top_nav("Players")
 
     # Scatter-click selection defers clearing the search/season widgets to here,
     # before they're instantiated below — Streamlit forbids writing to a widget's
@@ -797,6 +829,220 @@ def render_compare(df: pd.DataFrame) -> None:
         st.markdown(render_compare_table(p2_row, p1_row, PLAYER2_COLOR), unsafe_allow_html=True)
 
 
+# --- Teams page ---------------------------------------------------------------
+
+
+def render_team_stats_table(table_source: pd.DataFrame) -> None:
+    table_df = table_source[[
+        "team_name", "season", "w", "l", "w_pct",
+        "team_scoring_plus", "team_pts_plus", "team_ts_plus",
+        "off_rating", "ts_pct", "pct_uast_fgm",
+    ]].rename(columns={
+        "team_name": "Team Name",
+        "season": "Season",
+        "w": "W",
+        "l": "L",
+        "w_pct": "Win%",
+        "team_scoring_plus": "Scoring+",
+        "team_pts_plus": "PTS+",
+        "team_ts_plus": "TS+",
+        "off_rating": "ORating",
+        "ts_pct": "TS%",
+        "pct_uast_fgm": "FGM% UAST",
+    })
+    # Sorted on the unrounded Scoring+ value; only the displayed text below is rounded.
+    table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
+
+    styled_table_df = (
+        table_df.style
+        .format({
+            "W": "{:.0f}",
+            "L": "{:.0f}",
+            "Win%": "{:.3f}",
+            "Scoring+": "{:.0f}",
+            "PTS+": "{:.0f}",
+            "TS+": "{:.0f}",
+            "ORating": "{:.1f}",
+            "TS%": "{:.3f}",
+            "FGM% UAST": "{:.3f}",
+        })
+        .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
+    )
+
+    st.dataframe(
+        styled_table_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Team Name": st.column_config.TextColumn(width="medium"),
+            "Season": st.column_config.TextColumn(width="small"),
+            "W": st.column_config.NumberColumn(format="%d", width="small"),
+            "L": st.column_config.NumberColumn(format="%d", width="small"),
+            "Win%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
+            "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "TS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "ORating": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
+        },
+    )
+
+
+def render_teams(team_profile_df: pd.DataFrame) -> None:
+    render_top_nav("Teams")
+
+    seasons_by_year = (
+        team_profile_df[["season_end_year", "season"]]
+        .drop_duplicates()
+        .sort_values("season_end_year", ascending=False)
+    )
+    season_choice = st.selectbox(
+        "Season", ["All Seasons"] + seasons_by_year["season"].tolist(), key="teams_season_choice"
+    )
+
+    if season_choice == "All Seasons":
+        filtered_df = team_profile_df
+    else:
+        filtered_df = team_profile_df[team_profile_df["season"] == season_choice]
+
+    show_season_in_top = season_choice == "All Seasons"
+    leaders_label = "All-Time" if season_choice == "All Seasons" else season_choice
+    st.subheader(f"Top 5 — {leaders_label}")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**Scoring+**")
+        render_leaderboard(
+            filtered_df, "team_scoring_plus", show_season_in_top,
+            name_col="team_name", empty_message="No teams found.",
+        )
+    with col2:
+        st.markdown("**Pts+**")
+        render_leaderboard(
+            filtered_df, "team_pts_plus", show_season_in_top,
+            name_col="team_name", empty_message="No teams found.",
+        )
+    with col3:
+        st.markdown("**TS+**")
+        render_leaderboard(
+            filtered_df, "team_ts_plus", show_season_in_top,
+            name_col="team_name", empty_message="No teams found.",
+        )
+
+    st.divider()
+
+    st.subheader("All Teams")
+
+    title_col, dropdown_col = st.columns([3, 1])
+    plot_choice = dropdown_col.selectbox(
+        "Scatter plot",
+        ["FGM% UAST vs Scoring+", "TS+ vs PTS+"],
+        key="teams_scatter_choice",
+        label_visibility="collapsed",
+    )
+    title_col.subheader(plot_choice)
+
+    if season_choice == "All Seasons":
+        plot_caption = f"{season_range_label(filtered_df['season_end_year'].unique())} Seasons"
+    else:
+        plot_caption = f"{season_choice} Season"
+    title_col.caption(plot_caption)
+
+    if plot_choice == "FGM% UAST vs Scoring+":
+        if not filtered_df.empty:
+            w_pct_min = filtered_df["w_pct"].min()
+            w_pct_max = filtered_df["w_pct"].max()
+        else:
+            w_pct_min = w_pct_max = 0.5
+        marker_colors = [
+            scoring_plus_gradient_color(v, w_pct_min, w_pct_max, center=0.5) for v in filtered_df["w_pct"]
+        ]
+
+        scatter_fig = px.scatter(
+            filtered_df,
+            x="pct_uast_fgm",
+            y="team_scoring_plus",
+            hover_name="team_name",
+            custom_data=["season", "w_pct"],
+            labels={"pct_uast_fgm": "FGM% UAST", "team_scoring_plus": "Scoring+"},
+        )
+        scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+
+        y_max_dev = (filtered_df["team_scoring_plus"] - 100).abs().max() if not filtered_df.empty else 10
+        y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+        scatter_fig.update_yaxes(range=[y0, y1])
+
+        if not filtered_df.empty:
+            x_min, x_max = filtered_df["pct_uast_fgm"].min(), filtered_df["pct_uast_fgm"].max()
+            x_pad = (x_max - x_min) * 0.05
+            scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
+
+            vline_x = filtered_df["pct_uast_fgm"].mean()
+            hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{plot_caption}"
+            scatter_fig.add_trace(go.Scatter(
+                x=[vline_x] * 50,
+                y=np.linspace(y0, y1, 50),
+                mode="lines",
+                line=dict(dash="dash", color="#898781"),
+                hoverinfo="text",
+                hovertext=hover_label,
+                showlegend=False,
+            ))
+        scatter_fig.update_traces(
+            marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
+            hovertemplate=(
+                "<b>%{hovertext}</b> (%{customdata[0]})<br>"
+                "FGM% UAST: %{x:.3f}<br>Scoring+: %{y:.0f}<br>"
+                "Win%: %{customdata[1]:.3f}<extra></extra>"
+            ),
+            selector=dict(mode="markers"),
+        )
+        st.plotly_chart(scatter_fig, use_container_width=True, key="teams_scatter_chart_fgm")
+
+    else:
+        x_max_dev = (filtered_df["team_ts_plus"] - 100).abs().max() if not filtered_df.empty else 10
+        y_max_dev = (filtered_df["team_pts_plus"] - 100).abs().max() if not filtered_df.empty else 10
+        x0, x1 = 100 - x_max_dev * 1.1, 100 + x_max_dev * 1.1
+        y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+
+        if not filtered_df.empty:
+            min_val = filtered_df["team_scoring_plus"].min()
+            max_val = filtered_df["team_scoring_plus"].max()
+        else:
+            min_val = max_val = 100
+        marker_colors = [
+            scoring_plus_gradient_color(v, min_val, max_val) for v in filtered_df["team_scoring_plus"]
+        ]
+
+        scatter_fig = px.scatter(
+            filtered_df,
+            x="team_ts_plus",
+            y="team_pts_plus",
+            hover_name="team_name",
+            custom_data=["season", "team_scoring_plus"],
+            labels={"team_ts_plus": "TS+", "team_pts_plus": "PTS+"},
+        )
+        scatter_fig.update_traces(
+            marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
+            hovertemplate=(
+                "<b>%{hovertext}</b> (%{customdata[0]})<br>"
+                "Scoring+: %{customdata[1]:.0f}<br>"
+                "PTS+: %{y:.0f}<br>"
+                "TS+: %{x:.0f}<extra></extra>"
+            ),
+        )
+        scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+        scatter_fig.add_vline(x=100, line_dash="dash", line_color="#898781")
+        scatter_fig.update_xaxes(range=[x0, x1])
+        scatter_fig.update_yaxes(range=[y0, y1])
+        st.plotly_chart(scatter_fig, use_container_width=True, key="teams_scatter_chart_ts_pts")
+
+    st.divider()
+
+    render_team_stats_table(filtered_df)
+
+
 # --- Team Breakdown page -----------------------------------------------------
 
 # The 2005-2007 Hornets franchise's own name contains a "/", so it can't be told
@@ -873,8 +1119,13 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
     team_profile_row = team_profile_match.iloc[0] if not team_profile_match.empty else None
 
     if team_profile_row is not None:
+        finishers_col, balanced_col_name, creators_col = (
+            ("finishers_q", "balanced_q", "creators_q") if qualified_only else ("finishers", "balanced", "creators")
+        )
         finishers, balanced, creators = (
-            int(team_profile_row["Finishers"]), int(team_profile_row["Balanced"]), int(team_profile_row["Creators"])
+            int(team_profile_row[finishers_col]),
+            int(team_profile_row[balanced_col_name]),
+            int(team_profile_row[creators_col]),
         )
     else:
         # Falls back to a live count if team_profile has no matching row (shouldn't
@@ -900,7 +1151,16 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
     if team_profile_row is not None:
         n_teams = len(team_profile_season)
 
-        st.caption("Team Scoring+ / PTS+ / TS+ (league rank that season)")
+        _, record_top_col2, _ = st.columns(3)
+        record_top_col2.markdown(
+            "<div style='text-align:center;'>"
+            "<div style='font-size:0.875rem; opacity:0.7;'>Record</div>"
+            f"<div style='font-size:2.25rem; font-weight:700; line-height:1.25;'>"
+            f"{int(team_profile_row['w'])}-{int(team_profile_row['l'])}</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
         sp_col, pp_col, tsp_col = st.columns(3)
         sp_col.markdown(
             render_ranked_metric(
@@ -924,10 +1184,19 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
             unsafe_allow_html=True,
         )
 
-        record_col, off_rating_col, ts_pct_col = st.columns(3)
-        record_col.metric("Record", f"{int(team_profile_row['w'])}-{int(team_profile_row['l'])}")
-        off_rating_col.metric("Offensive Rating", f"{team_profile_row['off_rating']:.1f}")
-        ts_pct_col.metric("Team TS%", f"{team_profile_row['ts_pct']:.3f}")
+        fgm_uast_col, off_rating_col, ts_pct_col = st.columns(3)
+        fgm_uast_col.markdown(
+            render_plain_metric("FGM% UAST", f"{team_profile_row['pct_uast_fgm']:.1%}"),
+            unsafe_allow_html=True,
+        )
+        off_rating_col.markdown(
+            render_plain_metric("Offensive Rating", f"{team_profile_row['off_rating']:.1f}"),
+            unsafe_allow_html=True,
+        )
+        ts_pct_col.markdown(
+            render_plain_metric("Team TS%", f"{team_profile_row['ts_pct']:.1%}"),
+            unsafe_allow_html=True,
+        )
 
     st.divider()
 
@@ -938,8 +1207,11 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
         key="team_breakdown_scatter_choice",
         label_visibility="collapsed",
     )
-    title_col.subheader(plot_choice)
+    title_col.subheader(f"{team_choice.title()} {season_choice} {plot_choice}")
     title_col.caption(f"{'Qualified' if qualified_only else 'All'} Players — {season_choice}")
+    st.markdown(
+        "*The Data Point Size Is Relative To The Amount Of Minutes Played By The Player*"
+    )
 
     # The average/axis reference always compares against the whole league's
     # scoring-title-qualified players for the selected season.
@@ -953,6 +1225,9 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
             color="profile",
             color_discrete_map=PROFILE_COLORS,
             hover_name="player_name",
+            size="minutes_played",
+            size_max=MARKER_SIZE_MAX,
+            custom_data=["minutes_played"],
             labels={"pct_uast_fgm": "FGM% UAST", "scoring_plus": "Scoring+", "profile": "Scoring Profile"},
         )
         scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
@@ -978,8 +1253,13 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
                 showlegend=False,
             ))
         scatter_fig.update_traces(
-            marker=dict(size=8, opacity=0.75),
-            hovertemplate="<b>%{hovertext}</b><br>FGM% UAST: %{x:.3f}<br>Scoring+: %{y:.0f}<extra></extra>",
+            marker=dict(opacity=0.75),
+            hovertemplate=(
+                "<b>%{hovertext}</b><br>"
+                "FGM% UAST: %{x:.3f}<br>"
+                "Scoring+: %{y:.0f}<br>"
+                "Minutes: %{customdata[0]}<extra></extra>"
+            ),
             selector=dict(mode="markers"),
         )
         st.plotly_chart(scatter_fig, use_container_width=True, key="team_breakdown_scatter_fgm")
@@ -999,21 +1279,31 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
             scoring_plus_gradient_color(v, min_val, max_val) for v in team_season_source["scoring_plus"]
         ]
 
+        if not team_season_source.empty:
+            minutes_min = team_season_source["minutes_played"].min()
+            minutes_max = team_season_source["minutes_played"].max()
+        else:
+            minutes_min = minutes_max = 0
+        marker_sizes = [
+            marker_size_from_minutes(m, minutes_min, minutes_max) for m in team_season_source["minutes_played"]
+        ]
+
         scatter_fig = px.scatter(
             team_season_source,
             x="ts_plus",
             y="pts_plus",
             hover_name="player_name",
-            custom_data=["scoring_plus"],
+            custom_data=["scoring_plus", "minutes_played"],
             labels={"ts_plus": "TS+", "pts_plus": "PTS+"},
         )
         scatter_fig.update_traces(
-            marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
+            marker=dict(size=marker_sizes, opacity=0.85, color=marker_colors, line=dict(width=0)),
             hovertemplate=(
                 "<b>%{hovertext}</b><br>"
                 "Scoring+: %{customdata[0]:.0f}<br>"
                 "PTS+: %{y:.0f}<br>"
-                "TS+: %{x:.0f}<extra></extra>"
+                "TS+: %{x:.0f}<br>"
+                "Minutes: %{customdata[1]}<extra></extra>"
             ),
         )
         scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
@@ -1030,10 +1320,11 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
 df = load_player_profile()
 team_profile_df = load_team_profile()
 
-home_page = st.Page(lambda: render_home(df), title="Home", url_path="home", default=True)
+home_page = st.Page(lambda: render_home(df), title="Players", url_path="home", default=True)
 compare_page = st.Page(lambda: render_compare(df), title="Compare", url_path="compare")
+teams_page = st.Page(lambda: render_teams(team_profile_df), title="Teams", url_path="teams")
 team_breakdown_page = st.Page(
     lambda: render_team_breakdown(df, team_profile_df), title="Team Breakdown", url_path="team-breakdown"
 )
 
-st.navigation([home_page, compare_page, team_breakdown_page], position="hidden").run()
+st.navigation([home_page, teams_page, team_breakdown_page, compare_page], position="hidden").run()
