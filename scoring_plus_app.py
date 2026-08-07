@@ -600,6 +600,7 @@ COMPARE_ROWS = [
     ("per_100_pts", "PTS per 100", "num1"),
     ("fg_percentage", "FG%", "num3"),
     ("three_point_percentage", "3P%", "num3"),
+    ("ft_percentage", "FT%", "num3"),
     ("true_shooting_percentage", "TS%", "num3"),
     ("pct_uast_fgm", "FGM% UAST", "num3"),
 ]
@@ -790,10 +791,7 @@ def render_compare_scatter(
     st.plotly_chart(scatter_fig, use_container_width=True, key=f"compare_scatter_chart_{plot_choice}")
 
 
-def render_compare(df: pd.DataFrame) -> None:
-    render_top_nav("Compare")
-    st.subheader("Compare Players")
-
+def render_compare_players(df: pd.DataFrame) -> None:
     search_col1, search_col2 = st.columns(2)
 
     with search_col1:
@@ -829,13 +827,232 @@ def render_compare(df: pd.DataFrame) -> None:
         st.markdown(render_compare_table(p2_row, p1_row, PLAYER2_COLOR), unsafe_allow_html=True)
 
 
+# (column, label, kind) in display order, mirroring COMPARE_ROWS above but for team_profile rows.
+TEAM_COMPARE_ROWS = [
+    ("team_name", "Team Name", "str"),
+    ("season", "Season", "str"),
+    ("record", "Record", "str"),
+    ("w_pct", "Win%", "num3"),
+    ("team_scoring_plus", "Scoring+", "num0"),
+    ("team_pts_plus", "PTS+", "num0"),
+    ("team_ts_plus", "TS+", "num0"),
+    ("team_ppg", "PPG", "num1"),
+    ("off_rating", "Offensive Rating", "num1"),
+    ("team_fg_pct", "FG%", "num3"),
+    ("team_3pt_pct", "3P%", "num3"),
+    ("team_ft_pct", "FT%", "num3"),
+    ("ts_pct", "TS%", "num3"),
+    ("pct_uast_fgm", "FGM% UAST", "num3"),
+]
+
+
+def team_select_widget(team_profile_df: pd.DataFrame, key_prefix: str) -> pd.Series:
+    team_choice = st.selectbox(
+        "Team", sorted(team_profile_df["team_name"].unique()), key=f"{key_prefix}_team"
+    )
+    seasons_for_team = (
+        team_profile_df[team_profile_df["team_name"] == team_choice][["season_end_year", "season"]]
+        .drop_duplicates()
+        .sort_values("season_end_year", ascending=False)
+    )
+    # Keyed by team_choice so switching teams never leaves a stale selection
+    # that isn't in the new options list.
+    season_choice = st.selectbox(
+        "Season", seasons_for_team["season"].tolist(), key=f"{key_prefix}_season_{team_choice}"
+    )
+    return team_profile_df[
+        (team_profile_df["team_name"] == team_choice) & (team_profile_df["season"] == season_choice)
+    ].iloc[0]
+
+
+def render_team_compare_table(row: pd.Series | None, other_row: pd.Series | None, accent_color: str) -> str:
+    bg_color = hex_to_rgba(accent_color, 0.10)
+    if row is None:
+        return (
+            f"<div style='opacity:0.6; padding:0.75rem; background-color:{bg_color}; "
+            f"border-radius:10px;'>Select a team and season above.</div>"
+        )
+
+    row = row.copy()
+    row["record"] = f"{int(row['w'])}-{int(row['l'])}"
+
+    lines = [
+        f"<table style='width:100%; border-collapse:collapse; background-color:{bg_color};'>"
+    ]
+    for col, label, kind in TEAM_COMPARE_ROWS:
+        value_display = format_compare_value(kind, row[col])
+        bold = (
+            kind in COMPARABLE_KINDS
+            and other_row is not None
+            and row[col] > other_row[col]
+        )
+        weight = "700" if bold else "400"
+        lines.append(
+            "<tr>"
+            "<td style='padding:4px 10px; border-bottom:1px solid rgba(128,128,128,0.25); opacity:0.7;'>"
+            f"{label}</td>"
+            f"<td style='padding:4px 10px; border-bottom:1px solid rgba(128,128,128,0.25); font-weight:{weight};'>"
+            f"{value_display}</td>"
+            "</tr>"
+        )
+    lines.append("</table>")
+    return "".join(lines)
+
+
+def render_team_compare_profile_bar(t1_row: pd.Series | None, t2_row: pd.Series | None) -> None:
+    qualified_only = st.checkbox(
+        "Qualified players only", value=True, key="compare_team_breakdown_qualified_only"
+    )
+    categories = ["Finishers", "Balanced", "Creators"]
+    profile_cols = (
+        ["finishers_q", "balanced_q", "creators_q"] if qualified_only
+        else ["finishers", "balanced", "creators"]
+    )
+
+    bar_fig = go.Figure()
+    max_value = 0
+    for row, color in [(t1_row, PLAYER1_COLOR), (t2_row, PLAYER2_COLOR)]:
+        if row is None:
+            continue
+        values = [row[col] for col in profile_cols]
+        max_value = max(max_value, max(values))
+        bar_fig.add_trace(go.Bar(
+            x=categories,
+            y=values,
+            text=values,
+            textposition="outside",
+            cliponaxis=False,
+            name=f"{row['team_name']} ({row['season']})",
+            marker_color=color,
+            hovertemplate=(
+                f"<b>{html.escape(str(row['team_name']))}</b> ({row['season']})<br>"
+                "%{x}: %{y}<extra></extra>"
+            ),
+        ))
+    bar_fig.update_layout(
+        barmode="group",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+    )
+    bar_fig.update_yaxes(visible=False, showgrid=False, range=[0, max_value * 1.2 if max_value else 1])
+    st.plotly_chart(bar_fig, use_container_width=True, key="team_compare_scatter_chart_profile_bar")
+
+
+def render_team_compare_scatter(
+    team_profile_df: pd.DataFrame, t1_row: pd.Series | None, t2_row: pd.Series | None, plot_choice: str
+) -> None:
+    if plot_choice == "Breakdown":
+        render_team_compare_profile_bar(t1_row, t2_row)
+        return
+
+    if plot_choice == "FGM% UAST vs Scoring+":
+        x_col, y_col = "pct_uast_fgm", "team_scoring_plus"
+        x_label, y_label = "FGM% UAST", "Scoring+"
+        x_fmt, y_fmt = ":.3f", ":.0f"
+    else:
+        x_col, y_col = "team_ts_plus", "team_pts_plus"
+        x_label, y_label = "TS+", "PTS+"
+        x_fmt, y_fmt = ":.0f", ":.0f"
+
+    scatter_fig = go.Figure()
+    scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+
+    # Fixed axis ranges matching the Teams page's default view (All Seasons) so the
+    # plot doesn't jump around as different teams/seasons are compared.
+    y_max_dev = (team_profile_df[y_col] - 100).abs().max()
+    y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+    scatter_fig.update_yaxes(range=[y0, y1], title=y_label)
+
+    if plot_choice == "FGM% UAST vs Scoring+":
+        x_min, x_max = team_profile_df[x_col].min(), team_profile_df[x_col].max()
+        x_pad = (x_max - x_min) * 0.05
+        scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad], title=x_label)
+
+        vline_x = team_profile_df[x_col].mean()
+        season_text = season_range_label(team_profile_df["season_end_year"].unique())
+        hover_label = f"League avg FGM% UAST: {vline_x:.3f}<br>{season_text}"
+        scatter_fig.add_trace(go.Scatter(
+            x=[vline_x] * 50,
+            y=np.linspace(y0, y1, 50),
+            mode="lines",
+            line=dict(dash="dash", color="#898781"),
+            hoverinfo="text",
+            hovertext=hover_label,
+            showlegend=False,
+        ))
+    else:
+        x_max_dev = (team_profile_df[x_col] - 100).abs().max()
+        x0, x1 = 100 - x_max_dev * 1.1, 100 + x_max_dev * 1.1
+        scatter_fig.update_xaxes(range=[x0, x1], title=x_label)
+        scatter_fig.add_vline(x=100, line_dash="dash", line_color="#898781")
+
+    for row, color in [(t1_row, PLAYER1_COLOR), (t2_row, PLAYER2_COLOR)]:
+        if row is None:
+            continue
+        scatter_fig.add_trace(go.Scatter(
+            x=[row[x_col]],
+            y=[row[y_col]],
+            mode="markers",
+            marker=dict(size=13, color=color, line=dict(width=1.5, color="white")),
+            name=f"{row['team_name']} ({row['season']})",
+            hovertemplate=(
+                f"<b>{html.escape(str(row['team_name']))}</b> ({row['season']})<br>"
+                f"{x_label}: %{{x{x_fmt}}}<br>{y_label}: %{{y{y_fmt}}}<extra></extra>"
+            ),
+        ))
+
+    scatter_fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02))
+    st.plotly_chart(scatter_fig, use_container_width=True, key=f"team_compare_scatter_chart_{plot_choice}")
+
+
+def render_compare_teams(team_profile_df: pd.DataFrame) -> None:
+    team_col1, team_col2 = st.columns(2)
+
+    with team_col1:
+        st.subheader("Team 1")
+        t1_row = team_select_widget(team_profile_df, "cmp_team1")
+
+    with team_col2:
+        st.subheader("Team 2")
+        t2_row = team_select_widget(team_profile_df, "cmp_team2")
+
+    st.divider()
+
+    table_col1, scatter_col, table_col2 = st.columns([1, 1.6, 1])
+    with table_col1:
+        st.markdown(render_team_compare_table(t1_row, t2_row, PLAYER1_COLOR), unsafe_allow_html=True)
+    with scatter_col:
+        plot_choice = st.selectbox(
+            "Scatter plot",
+            ["FGM% UAST vs Scoring+", "TS+ vs PTS+", "Breakdown"],
+            key="compare_team_scatter_choice",
+            label_visibility="collapsed",
+        )
+        render_team_compare_scatter(team_profile_df, t1_row, t2_row, plot_choice)
+    with table_col2:
+        st.markdown(render_team_compare_table(t2_row, t1_row, PLAYER2_COLOR), unsafe_allow_html=True)
+
+
+def render_compare(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
+    render_top_nav("Compare")
+    st.subheader("Compare")
+    compare_mode = st.selectbox(
+        "Players or Teams", ["Players", "Teams"], key="compare_mode", label_visibility="collapsed"
+    )
+    st.divider()
+
+    if compare_mode == "Players":
+        render_compare_players(df)
+    else:
+        render_compare_teams(team_profile_df)
+
+
 # --- Teams page ---------------------------------------------------------------
 
 
 def render_team_stats_table(table_source: pd.DataFrame) -> None:
     table_df = table_source[[
         "team_name", "season", "w", "l", "w_pct",
-        "team_scoring_plus", "team_pts_plus", "team_ts_plus",
+        "team_scoring_plus", "team_pts_plus", "team_ts_plus", "team_ppg",
         "off_rating", "ts_pct", "pct_uast_fgm",
     ]].rename(columns={
         "team_name": "Team Name",
@@ -846,6 +1063,7 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
         "team_scoring_plus": "Scoring+",
         "team_pts_plus": "PTS+",
         "team_ts_plus": "TS+",
+        "team_ppg": "PPG",
         "off_rating": "ORating",
         "ts_pct": "TS%",
         "pct_uast_fgm": "FGM% UAST",
@@ -862,6 +1080,7 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
             "Scoring+": "{:.0f}",
             "PTS+": "{:.0f}",
             "TS+": "{:.0f}",
+            "PPG": "{:.1f}",
             "ORating": "{:.1f}",
             "TS%": "{:.3f}",
             "FGM% UAST": "{:.3f}",
@@ -882,6 +1101,7 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
             "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
             "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
             "TS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
             "ORating": st.column_config.NumberColumn(format="%.1f", width="small"),
             "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
             "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
@@ -1321,7 +1541,7 @@ df = load_player_profile()
 team_profile_df = load_team_profile()
 
 home_page = st.Page(lambda: render_home(df), title="Players", url_path="home", default=True)
-compare_page = st.Page(lambda: render_compare(df), title="Compare", url_path="compare")
+compare_page = st.Page(lambda: render_compare(df, team_profile_df), title="Compare", url_path="compare")
 teams_page = st.Page(lambda: render_teams(team_profile_df), title="Teams", url_path="teams")
 team_breakdown_page = st.Page(
     lambda: render_team_breakdown(df, team_profile_df), title="Team Breakdown", url_path="team-breakdown"
