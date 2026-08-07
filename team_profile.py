@@ -11,7 +11,7 @@ import pandas as pd
 DB_PATH = "nba_stats.db"
 
 
-def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     with sqlite3.connect(db_path) as con:
         team_scoring_plus = pd.read_sql("SELECT * FROM team_scoring_plus", con)
         team_per_100_stats = pd.read_sql(
@@ -22,7 +22,10 @@ def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.
         player_profile = pd.read_sql(
             "SELECT team_id, season_end_year, profile, qualified FROM player_profile", con
         )
-    return team_scoring_plus, team_per_100_stats, player_profile
+        team_per_game_stats = pd.read_sql(
+            "SELECT team_id, season_end_year, per_game_pts FROM team_per_game_stats", con
+        )
+    return team_scoring_plus, team_per_100_stats, player_profile, team_per_game_stats
 
 
 def _profile_counts(source: pd.DataFrame, columns: dict[str, str]) -> pd.DataFrame:
@@ -40,7 +43,7 @@ def _profile_counts(source: pd.DataFrame, columns: dict[str, str]) -> pd.DataFra
 
 
 def compute_team_profile(
-    team_scoring_plus: pd.DataFrame, team_per_100_stats: pd.DataFrame, player_profile: pd.DataFrame
+    team_scoring_plus: pd.DataFrame, team_per_100_stats: pd.DataFrame, player_profile: pd.DataFrame, team_per_game_stats: pd.DataFrame
 ) -> pd.DataFrame:
     df = team_scoring_plus.merge(
         team_per_100_stats.rename(columns={
@@ -48,6 +51,11 @@ def compute_team_profile(
             "per_100_fg3_pct": "team_3pt_pct",
             "per_100_ft_pct": "team_ft_pct",
         }),
+        on=["team_id", "season_end_year"],
+    )
+
+    df = df.merge(
+        team_per_game_stats.rename(columns={"per_game_pts": "team_ppg"}),
         on=["team_id", "season_end_year"],
     )
 
@@ -81,7 +89,7 @@ def save_to_sqlite(df: pd.DataFrame, db_path: str = DB_PATH) -> None:
 
 
 if __name__ == "__main__":
-    team_scoring_plus, team_per_100_stats, player_profile = load_tables()
-    team_profile_df = compute_team_profile(team_scoring_plus, team_per_100_stats, player_profile)
+    team_scoring_plus, team_per_100_stats, player_profile, team_per_game_stats = load_tables()
+    team_profile_df = compute_team_profile(team_scoring_plus, team_per_100_stats, player_profile, team_per_game_stats)
     save_to_sqlite(team_profile_df)
     print(team_profile_df.head())
