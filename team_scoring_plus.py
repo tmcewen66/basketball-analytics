@@ -2,12 +2,17 @@
 """
 Creates a team-level analog of scoring_plus: combines each team's offensive
 rating and true shooting percentage with the league average for that season
-to produce team_scoring_plus, team_pts_plus, and team_ts_plus, plus each
-team's 1-30 (best-to-worst) rank within its season for those three metrics.
+to produce team_orating_plus and team_ts_plus. team_possession_residual is
+the residual of team_orating_plus regressed on team_ts_plus (offensive
+rating explained by shooting efficiency alone) and team_possession_plus
+recenters that residual at 100, isolating each team's non-shooting
+(possession-based) scoring contribution. Each metric also gets a 1-30
+(best-to-worst) rank within its season.
 """
 
 import sqlite3
 import pandas as pd
+import statsmodels.api as sm
 
 DB_PATH = "nba_stats.db"
 
@@ -34,15 +39,15 @@ def compute_team_scoring_plus(
     df["pct_uast_fgm"] = 1 - df["ast_pct"]
     df["league_pct_uast_fgm"] = 1 - df["league_ast_pct"]
 
-    df["team_pts_plus"] = (df["off_rating"] / df["league_off_rating"]) * 100
+    df["team_orating_plus"] = (df["off_rating"] / df["league_off_rating"]) * 100
     df["team_ts_plus"] = (df["ts_pct"] / df["league_ts_pct"]) * 100
-    df["team_scoring_plus"] = (
-        100
-        + (0.765 * (df["team_ts_plus"] - 100))
-        + (0.235 * (df["team_pts_plus"] - 100))
-    )
 
-    for col in ("team_scoring_plus", "team_pts_plus", "team_ts_plus"):
+    X = sm.add_constant(df["team_ts_plus"])
+    resid_model = sm.OLS(df["team_orating_plus"], X).fit()
+    df["team_possession_residual"] = resid_model.resid
+    df["team_possession_plus"] = 100 + df["team_possession_residual"]
+
+    for col in ("team_orating_plus", "team_ts_plus", "team_possession_plus"):
         df[f"{col}_rank"] = (
             df.groupby("season_end_year")[col].rank(method="min", ascending=False).astype(int)
         )
@@ -51,8 +56,8 @@ def compute_team_scoring_plus(
         "season_end_year", "team_id", "team_name", "gp", "w", "l", "w_pct",
         "off_rating", "ast_pct", "pct_uast_fgm", "ts_pct",
         "league_off_rating", "league_ast_pct", "league_pct_uast_fgm", "league_ts_pct",
-        "team_scoring_plus", "team_pts_plus", "team_ts_plus",
-        "team_scoring_plus_rank", "team_pts_plus_rank", "team_ts_plus_rank",
+        "team_orating_plus", "team_ts_plus", "team_possession_residual", "team_possession_plus",
+        "team_orating_plus_rank", "team_ts_plus_rank", "team_possession_plus_rank",
     ]]
 
 

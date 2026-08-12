@@ -34,7 +34,7 @@ def load_player_profile(db_path: str = DB_PATH) -> pd.DataFrame:
 def load_team_profile(db_path: str = DB_PATH) -> pd.DataFrame:
     with sqlite3.connect(db_path) as con:
         df = pd.read_sql("SELECT * FROM team_profile", con)
-    df["season"] = (df["season_end_year"] - 1).astype(str) + "-" + df["season_end_year"].astype(str)
+    df["season"] = (df["season_end_year"] - 1).astype(str) + "-" + df["season_end_year"].astype(str)  # type: ignore
     return df
 
 
@@ -833,9 +833,9 @@ TEAM_COMPARE_ROWS = [
     ("season", "Season", "str"),
     ("record", "Record", "str"),
     ("w_pct", "Win%", "num3"),
-    ("team_scoring_plus", "Scoring+", "num0"),
-    ("team_pts_plus", "PTS+", "num0"),
+    ("team_orating_plus", "oRating+", "num0"),
     ("team_ts_plus", "TS+", "num0"),
+    ("team_possession_plus", "Possession+", "num0"),
     ("team_ppg", "PPG", "num1"),
     ("off_rating", "Offensive Rating", "num1"),
     ("team_fg_pct", "FG%", "num3"),
@@ -944,13 +944,13 @@ def render_team_compare_scatter(
         render_team_compare_profile_bar(t1_row, t2_row)
         return
 
-    if plot_choice == "FGM% UAST vs Scoring+":
-        x_col, y_col = "pct_uast_fgm", "team_scoring_plus"
-        x_label, y_label = "FGM% UAST", "Scoring+"
+    if plot_choice == "FGM% UAST vs Possession+":
+        x_col, y_col = "pct_uast_fgm", "team_possession_plus"
+        x_label, y_label = "FGM% UAST", "Possession+"
         x_fmt, y_fmt = ":.3f", ":.0f"
     else:
-        x_col, y_col = "team_ts_plus", "team_pts_plus"
-        x_label, y_label = "TS+", "PTS+"
+        x_col, y_col = "team_ts_plus", "team_orating_plus"
+        x_label, y_label = "TS+", "oRating+"
         x_fmt, y_fmt = ":.0f", ":.0f"
 
     scatter_fig = go.Figure()
@@ -962,7 +962,7 @@ def render_team_compare_scatter(
     y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
     scatter_fig.update_yaxes(range=[y0, y1], title=y_label)
 
-    if plot_choice == "FGM% UAST vs Scoring+":
+    if plot_choice == "FGM% UAST vs Possession+":
         x_min, x_max = team_profile_df[x_col].min(), team_profile_df[x_col].max()
         x_pad = (x_max - x_min) * 0.05
         scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad], title=x_label)
@@ -1023,7 +1023,7 @@ def render_compare_teams(team_profile_df: pd.DataFrame) -> None:
     with scatter_col:
         plot_choice = st.selectbox(
             "Scatter plot",
-            ["FGM% UAST vs Scoring+", "TS+ vs PTS+", "Breakdown"],
+            ["FGM% UAST vs Possession+", "TS+ vs oRating+", "Breakdown"],
             key="compare_team_scatter_choice",
             label_visibility="collapsed",
         )
@@ -1052,7 +1052,7 @@ def render_compare(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
 def render_team_stats_table(table_source: pd.DataFrame) -> None:
     table_df = table_source[[
         "team_name", "season", "w", "l", "w_pct",
-        "team_scoring_plus", "team_pts_plus", "team_ts_plus", "team_ppg",
+        "team_orating_plus", "team_ts_plus", "team_possession_plus", "team_ppg",
         "off_rating", "ts_pct", "pct_uast_fgm",
     ]].rename(columns={
         "team_name": "Team Name",
@@ -1060,16 +1060,16 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
         "w": "W",
         "l": "L",
         "w_pct": "Win%",
-        "team_scoring_plus": "Scoring+",
-        "team_pts_plus": "PTS+",
+        "team_orating_plus": "oRating+",
         "team_ts_plus": "TS+",
+        "team_possession_plus": "Possession+",
         "team_ppg": "PPG",
         "off_rating": "ORating",
         "ts_pct": "TS%",
         "pct_uast_fgm": "FGM% UAST",
     })
-    # Sorted on the unrounded Scoring+ value; only the displayed text below is rounded.
-    table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
+    # Sorted on the unrounded oRating+ value; only the displayed text below is rounded.
+    table_df = table_df.sort_values("oRating+", ascending=False).reset_index(drop=True)
 
     styled_table_df = (
         table_df.style
@@ -1077,15 +1077,15 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
             "W": "{:.0f}",
             "L": "{:.0f}",
             "Win%": "{:.3f}",
-            "Scoring+": "{:.0f}",
-            "PTS+": "{:.0f}",
+            "oRating+": "{:.0f}",
             "TS+": "{:.0f}",
+            "Possession+": "{:.0f}",
             "PPG": "{:.1f}",
             "ORating": "{:.1f}",
             "TS%": "{:.3f}",
             "FGM% UAST": "{:.3f}",
         })
-        .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
+        .map(color_plus_metric, subset=["oRating+", "TS+", "Possession+"])
     )
 
     st.dataframe(
@@ -1098,9 +1098,9 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
             "W": st.column_config.NumberColumn(format="%d", width="small"),
             "L": st.column_config.NumberColumn(format="%d", width="small"),
             "Win%": st.column_config.NumberColumn(format="%.3f", width="small"),
-            "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
-            "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "oRating+": st.column_config.NumberColumn(format="%d", width="small"),
             "TS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "Possession+": st.column_config.NumberColumn(format="%d", width="small"),
             "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
             "ORating": st.column_config.NumberColumn(format="%.1f", width="small"),
             "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
@@ -1132,21 +1132,21 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown("**Scoring+**")
+        st.markdown("**oRating+**")
         render_leaderboard(
-            filtered_df, "team_scoring_plus", show_season_in_top,
+            filtered_df, "team_orating_plus", show_season_in_top,
             name_col="team_name", empty_message="No teams found.",
         )
     with col2:
-        st.markdown("**Pts+**")
-        render_leaderboard(
-            filtered_df, "team_pts_plus", show_season_in_top,
-            name_col="team_name", empty_message="No teams found.",
-        )
-    with col3:
         st.markdown("**TS+**")
         render_leaderboard(
             filtered_df, "team_ts_plus", show_season_in_top,
+            name_col="team_name", empty_message="No teams found.",
+        )
+    with col3:
+        st.markdown("**Possession+**")
+        render_leaderboard(
+            filtered_df, "team_possession_plus", show_season_in_top,
             name_col="team_name", empty_message="No teams found.",
         )
 
@@ -1157,7 +1157,7 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
     title_col, dropdown_col = st.columns([3, 1])
     plot_choice = dropdown_col.selectbox(
         "Scatter plot",
-        ["FGM% UAST vs Scoring+", "TS+ vs PTS+"],
+        ["FGM% UAST vs Possession+", "TS+ vs oRating+"],
         key="teams_scatter_choice",
         label_visibility="collapsed",
     )
@@ -1169,7 +1169,7 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
         plot_caption = f"{season_choice} Season"
     title_col.caption(plot_caption)
 
-    if plot_choice == "FGM% UAST vs Scoring+":
+    if plot_choice == "FGM% UAST vs Possession+":
         if not filtered_df.empty:
             w_pct_min = filtered_df["w_pct"].min()
             w_pct_max = filtered_df["w_pct"].max()
@@ -1182,14 +1182,14 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
         scatter_fig = px.scatter(
             filtered_df,
             x="pct_uast_fgm",
-            y="team_scoring_plus",
+            y="team_possession_plus",
             hover_name="team_name",
             custom_data=["season", "w_pct"],
-            labels={"pct_uast_fgm": "FGM% UAST", "team_scoring_plus": "Scoring+"},
+            labels={"pct_uast_fgm": "FGM% UAST", "team_possession_plus": "Possession+"},
         )
         scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
 
-        y_max_dev = (filtered_df["team_scoring_plus"] - 100).abs().max() if not filtered_df.empty else 10
+        y_max_dev = (filtered_df["team_possession_plus"] - 100).abs().max() if not filtered_df.empty else 10
         y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
         scatter_fig.update_yaxes(range=[y0, y1])
 
@@ -1213,7 +1213,7 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
             marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
             hovertemplate=(
                 "<b>%{hovertext}</b> (%{customdata[0]})<br>"
-                "FGM% UAST: %{x:.3f}<br>Scoring+: %{y:.0f}<br>"
+                "FGM% UAST: %{x:.3f}<br>Possession+: %{y:.0f}<br>"
                 "Win%: %{customdata[1]:.3f}<extra></extra>"
             ),
             selector=dict(mode="markers"),
@@ -1222,33 +1222,32 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
 
     else:
         x_max_dev = (filtered_df["team_ts_plus"] - 100).abs().max() if not filtered_df.empty else 10
-        y_max_dev = (filtered_df["team_pts_plus"] - 100).abs().max() if not filtered_df.empty else 10
+        y_max_dev = (filtered_df["team_orating_plus"] - 100).abs().max() if not filtered_df.empty else 10
         x0, x1 = 100 - x_max_dev * 1.1, 100 + x_max_dev * 1.1
         y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
 
         if not filtered_df.empty:
-            min_val = filtered_df["team_scoring_plus"].min()
-            max_val = filtered_df["team_scoring_plus"].max()
+            min_val = filtered_df["team_orating_plus"].min()
+            max_val = filtered_df["team_orating_plus"].max()
         else:
             min_val = max_val = 100
         marker_colors = [
-            scoring_plus_gradient_color(v, min_val, max_val) for v in filtered_df["team_scoring_plus"]
+            scoring_plus_gradient_color(v, min_val, max_val) for v in filtered_df["team_orating_plus"]
         ]
 
         scatter_fig = px.scatter(
             filtered_df,
             x="team_ts_plus",
-            y="team_pts_plus",
+            y="team_orating_plus",
             hover_name="team_name",
-            custom_data=["season", "team_scoring_plus"],
-            labels={"team_ts_plus": "TS+", "team_pts_plus": "PTS+"},
+            custom_data=["season", "team_orating_plus"],
+            labels={"team_ts_plus": "TS+", "team_orating_plus": "oRating+"},
         )
         scatter_fig.update_traces(
             marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
             hovertemplate=(
                 "<b>%{hovertext}</b> (%{customdata[0]})<br>"
-                "Scoring+: %{customdata[1]:.0f}<br>"
-                "PTS+: %{y:.0f}<br>"
+                "oRating+: %{y:.0f}<br>"
                 "TS+: %{x:.0f}<extra></extra>"
             ),
         )
@@ -1381,18 +1380,11 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
             unsafe_allow_html=True,
         )
 
-        sp_col, pp_col, tsp_col = st.columns(3)
-        sp_col.markdown(
+        op_col, tsp_col, pp_col = st.columns(3)
+        op_col.markdown(
             render_ranked_metric(
-                "Team Scoring+", f"{team_profile_row['team_scoring_plus']:.0f}",
-                int(team_profile_row["team_scoring_plus_rank"]), n_teams,
-            ),
-            unsafe_allow_html=True,
-        )
-        pp_col.markdown(
-            render_ranked_metric(
-                "Team PTS+", f"{team_profile_row['team_pts_plus']:.0f}",
-                int(team_profile_row["team_pts_plus_rank"]), n_teams,
+                "Team oRating+", f"{team_profile_row['team_orating_plus']:.0f}",
+                int(team_profile_row["team_orating_plus_rank"]), n_teams,
             ),
             unsafe_allow_html=True,
         )
@@ -1400,6 +1392,13 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
             render_ranked_metric(
                 "Team TS+", f"{team_profile_row['team_ts_plus']:.0f}",
                 int(team_profile_row["team_ts_plus_rank"]), n_teams,
+            ),
+            unsafe_allow_html=True,
+        )
+        pp_col.markdown(
+            render_ranked_metric(
+                "Team Possession+", f"{team_profile_row['team_possession_plus']:.0f}",
+                int(team_profile_row["team_possession_plus_rank"]), n_teams,
             ),
             unsafe_allow_html=True,
         )
