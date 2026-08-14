@@ -44,7 +44,7 @@ def compute_scoring_plus(
 
     df["pts_plus"] = df["per_100_pts"] / df["league_avg_per_100_pts_per_player"] * 100
     df["ts_plus"] = df["true_shooting_percentage"] / df["league_avg_true_shooting_percentage"] * 100
-    df["scoring_plus"] = 100 + (0.765 * (df["ts_plus"] - 100)) + (0.235 * (df["pts_plus"] - 100))
+    df["scoring_plus"] = 100 + (0.795 * (df["ts_plus"] - 100)) + (0.205 * (df["pts_plus"] - 100))
 
     df = df.merge(basic, on=["slug", "season_end_year"])
     df = df.merge(team_per_100.rename(columns={"gp": "team_gp"}), on=["team_id", "season_end_year"])
