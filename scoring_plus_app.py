@@ -944,6 +944,70 @@ def render_team_compare_scatter(
         render_team_compare_profile_bar(t1_row, t2_row)
         return
 
+    if plot_choice == "Turnover% vs O-Rebounding%":
+        x_col, y_col = "tm_tov_pct", "oreb_pct"
+        x_label, y_label = "Turnover%", "O-Rebounding%"
+
+        x_min, x_max = team_profile_df[x_col].min(), team_profile_df[x_col].max()
+        x_pad = (x_max - x_min) * 0.05
+        y_min, y_max = team_profile_df[y_col].min(), team_profile_df[y_col].max()
+        y_pad = (y_max - y_min) * 0.05
+
+        scatter_fig = go.Figure()
+        # Inverted (max first): lower Turnover% lands on the right.
+        scatter_fig.update_xaxes(range=[x_max + x_pad, x_min - x_pad], title=x_label)
+        scatter_fig.update_yaxes(range=[y_min - y_pad, y_max + y_pad], title=y_label)
+
+        # Averages always reflect all seasons here, unlike the season-filtered
+        # averages on the Teams page, since the two compared teams can be
+        # from different seasons.
+        season_text = season_range_label(team_profile_df["season_end_year"].unique())
+        vline_x = team_profile_df[x_col].mean()
+        scatter_fig.add_trace(go.Scatter(
+            x=[vline_x] * 50,
+            y=np.linspace(y_min - y_pad, y_max + y_pad, 50),
+            mode="lines",
+            line=dict(dash="dash", color="#898781"),
+            hoverinfo="text",
+            hovertext=f"League avg Turnover%: {vline_x:.3f}<br>{season_text}",
+            showlegend=False,
+        ))
+        hline_y = team_profile_df[y_col].mean()
+        scatter_fig.add_trace(go.Scatter(
+            x=np.linspace(x_min - x_pad, x_max + x_pad, 50),
+            y=[hline_y] * 50,
+            mode="lines",
+            line=dict(dash="dash", color="#898781"),
+            hoverinfo="text",
+            hovertext=f"League avg O-Rebounding%: {hline_y:.3f}<br>{season_text}",
+            showlegend=False,
+        ))
+
+        pose_min = team_profile_df["team_possession_residual"].min()
+        pose_max = team_profile_df["team_possession_residual"].max()
+        for row in (t1_row, t2_row):
+            if row is None:
+                continue
+            marker_color = scoring_plus_gradient_color(
+                row["team_possession_residual"], pose_min, pose_max, center=0
+            )
+            scatter_fig.add_trace(go.Scatter(
+                x=[row[x_col]],
+                y=[row[y_col]],
+                mode="markers",
+                marker=dict(size=13, color=marker_color, line=dict(width=1.5, color="white")),
+                name=f"{row['team_name']} ({row['season']})",
+                hovertemplate=(
+                    f"<b>{html.escape(str(row['team_name']))}</b> ({row['season']})<br>"
+                    f"{x_label}: %{{x:.3f}}<br>{y_label}: %{{y:.3f}}<br>"
+                    f"PosE: {row['team_possession_residual']:+.1f}<extra></extra>"
+                ),
+            ))
+
+        scatter_fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.02))
+        st.plotly_chart(scatter_fig, use_container_width=True, key=f"team_compare_scatter_chart_{plot_choice}")
+        return
+
     if plot_choice == "FGM% UAST vs oRating+":
         x_col, y_col = "pct_uast_fgm", "team_orating_plus"
         x_label, y_label = "FGM% UAST", "oRating+"
@@ -1023,7 +1087,7 @@ def render_compare_teams(team_profile_df: pd.DataFrame) -> None:
     with scatter_col:
         plot_choice = st.selectbox(
             "Scatter plot",
-            ["FGM% UAST vs oRating+", "TS+ vs oRating+", "Breakdown"],
+            ["FGM% UAST vs oRating+", "TS+ vs oRating+", "Turnover% vs O-Rebounding%", "Breakdown"],
             key="compare_team_scatter_choice",
             label_visibility="collapsed",
         )
@@ -1182,7 +1246,7 @@ def render_teams(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
     title_col, dropdown_col = st.columns([3, 1])
     plot_choice = dropdown_col.selectbox(
         "Scatter plot",
-        ["FGM% UAST vs oRating+", "TS+ vs oRating+"],
+        ["FGM% UAST vs oRating+", "TS+ vs oRating+", "Turnover% vs O-Rebounding%"],
         key="teams_scatter_choice",
         label_visibility="collapsed",
     )
@@ -1245,7 +1309,7 @@ def render_teams(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
         )
         st.plotly_chart(scatter_fig, use_container_width=True, key="teams_scatter_chart_fgm")
 
-    else:
+    elif plot_choice == "TS+ vs oRating+":
         x_max_dev = (filtered_df["team_ts_plus"] - 100).abs().max() if not filtered_df.empty else 10
         y_max_dev = (filtered_df["team_orating_plus"] - 100).abs().max() if not filtered_df.empty else 10
         x0, x1 = 100 - x_max_dev * 1.1, 100 + x_max_dev * 1.1
@@ -1281,6 +1345,66 @@ def render_teams(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
         scatter_fig.update_xaxes(range=[x0, x1])
         scatter_fig.update_yaxes(range=[y0, y1])
         st.plotly_chart(scatter_fig, use_container_width=True, key="teams_scatter_chart_ts_pts")
+
+    else:
+        if not filtered_df.empty:
+            pose_min = filtered_df["team_possession_residual"].min()
+            pose_max = filtered_df["team_possession_residual"].max()
+        else:
+            pose_min = pose_max = 0
+        marker_colors = [
+            scoring_plus_gradient_color(v, pose_min, pose_max, center=0)
+            for v in filtered_df["team_possession_residual"]
+        ]
+
+        scatter_fig = px.scatter(
+            filtered_df,
+            x="tm_tov_pct",
+            y="oreb_pct",
+            hover_name="team_name",
+            custom_data=["season", "team_possession_residual"],
+            labels={"tm_tov_pct": "Turnover%", "oreb_pct": "O-Rebounding%"},
+        )
+
+        if not filtered_df.empty:
+            x_min, x_max = filtered_df["tm_tov_pct"].min(), filtered_df["tm_tov_pct"].max()
+            x_pad = (x_max - x_min) * 0.05
+            y_min, y_max = filtered_df["oreb_pct"].min(), filtered_df["oreb_pct"].max()
+            y_pad = (y_max - y_min) * 0.05
+            # Inverted (max first): lower Turnover% lands on the right.
+            scatter_fig.update_xaxes(range=[x_max + x_pad, x_min - x_pad])
+            scatter_fig.update_yaxes(range=[y_min - y_pad, y_max + y_pad])
+
+            vline_x = filtered_df["tm_tov_pct"].mean()
+            scatter_fig.add_trace(go.Scatter(
+                x=[vline_x] * 50,
+                y=np.linspace(y_min - y_pad, y_max + y_pad, 50),
+                mode="lines",
+                line=dict(dash="dash", color="#898781"),
+                hoverinfo="text",
+                hovertext=f"League avg Turnover%: {vline_x:.3f}<br>{plot_caption}",
+                showlegend=False,
+            ))
+            hline_y = filtered_df["oreb_pct"].mean()
+            scatter_fig.add_trace(go.Scatter(
+                x=np.linspace(x_min - x_pad, x_max + x_pad, 50),
+                y=[hline_y] * 50,
+                mode="lines",
+                line=dict(dash="dash", color="#898781"),
+                hoverinfo="text",
+                hovertext=f"League avg O-Rebounding%: {hline_y:.3f}<br>{plot_caption}",
+                showlegend=False,
+            ))
+        scatter_fig.update_traces(
+            marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
+            hovertemplate=(
+                "<b>%{hovertext}</b> (%{customdata[0]})<br>"
+                "Turnover%: %{x:.3f}<br>O-Rebounding%: %{y:.3f}<br>"
+                "PosE: %{customdata[1]:+.1f}<extra></extra>"
+            ),
+            selector=dict(mode="markers"),
+        )
+        st.plotly_chart(scatter_fig, use_container_width=True, key="teams_scatter_chart_tov_oreb")
 
     st.divider()
 
