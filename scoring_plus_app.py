@@ -944,9 +944,9 @@ def render_team_compare_scatter(
         render_team_compare_profile_bar(t1_row, t2_row)
         return
 
-    if plot_choice == "FGM% UAST vs Possession+":
-        x_col, y_col = "pct_uast_fgm", "team_possession_plus"
-        x_label, y_label = "FGM% UAST", "Possession+"
+    if plot_choice == "FGM% UAST vs oRating+":
+        x_col, y_col = "pct_uast_fgm", "team_orating_plus"
+        x_label, y_label = "FGM% UAST", "oRating+"
         x_fmt, y_fmt = ":.3f", ":.0f"
     else:
         x_col, y_col = "team_ts_plus", "team_orating_plus"
@@ -962,7 +962,7 @@ def render_team_compare_scatter(
     y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
     scatter_fig.update_yaxes(range=[y0, y1], title=y_label)
 
-    if plot_choice == "FGM% UAST vs Possession+":
+    if plot_choice == "FGM% UAST vs oRating+":
         x_min, x_max = team_profile_df[x_col].min(), team_profile_df[x_col].max()
         x_pad = (x_max - x_min) * 0.05
         scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad], title=x_label)
@@ -1023,7 +1023,7 @@ def render_compare_teams(team_profile_df: pd.DataFrame) -> None:
     with scatter_col:
         plot_choice = st.selectbox(
             "Scatter plot",
-            ["FGM% UAST vs Possession+", "TS+ vs oRating+", "Breakdown"],
+            ["FGM% UAST vs oRating+", "TS+ vs oRating+", "Breakdown"],
             key="compare_team_scatter_choice",
             label_visibility="collapsed",
         )
@@ -1053,7 +1053,7 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
     table_df = table_source[[
         "team_name", "season", "w", "l", "w_pct",
         "team_orating_plus", "team_ts_plus", "team_possession_plus", "team_ppg",
-        "off_rating", "ts_pct", "pct_uast_fgm",
+        "off_rating", "ts_pct", "team_possession_residual", "pct_uast_fgm",
     ]].rename(columns={
         "team_name": "Team Name",
         "season": "Season",
@@ -1066,6 +1066,7 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
         "team_ppg": "PPG",
         "off_rating": "ORating",
         "ts_pct": "TS%",
+        "team_possession_residual": "PosE",
         "pct_uast_fgm": "FGM% UAST",
     })
     # Sorted on the unrounded oRating+ value; only the displayed text below is rounded.
@@ -1083,6 +1084,7 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
             "PPG": "{:.1f}",
             "ORating": "{:.1f}",
             "TS%": "{:.3f}",
+            "PosE": "{:+.1f}",
             "FGM% UAST": "{:.3f}",
         })
         .map(color_plus_metric, subset=["oRating+", "TS+", "Possession+"])
@@ -1104,6 +1106,7 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
             "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
             "ORating": st.column_config.NumberColumn(format="%.1f", width="small"),
             "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "PosE": st.column_config.NumberColumn(format="%.1f", width="small"),
             "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
         },
     )
@@ -1157,7 +1160,7 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
     title_col, dropdown_col = st.columns([3, 1])
     plot_choice = dropdown_col.selectbox(
         "Scatter plot",
-        ["FGM% UAST vs Possession+", "TS+ vs oRating+"],
+        ["FGM% UAST vs oRating+", "TS+ vs oRating+"],
         key="teams_scatter_choice",
         label_visibility="collapsed",
     )
@@ -1169,7 +1172,7 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
         plot_caption = f"{season_choice} Season"
     title_col.caption(plot_caption)
 
-    if plot_choice == "FGM% UAST vs Possession+":
+    if plot_choice == "FGM% UAST vs oRating+":
         if not filtered_df.empty:
             w_pct_min = filtered_df["w_pct"].min()
             w_pct_max = filtered_df["w_pct"].max()
@@ -1182,14 +1185,14 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
         scatter_fig = px.scatter(
             filtered_df,
             x="pct_uast_fgm",
-            y="team_possession_plus",
+            y="team_orating_plus",
             hover_name="team_name",
             custom_data=["season", "w_pct"],
-            labels={"pct_uast_fgm": "FGM% UAST", "team_possession_plus": "Possession+"},
+            labels={"pct_uast_fgm": "FGM% UAST", "team_orating_plus": "oRating+"},
         )
         scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
 
-        y_max_dev = (filtered_df["team_possession_plus"] - 100).abs().max() if not filtered_df.empty else 10
+        y_max_dev = (filtered_df["team_orating_plus"] - 100).abs().max() if not filtered_df.empty else 10
         y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
         scatter_fig.update_yaxes(range=[y0, y1])
 
@@ -1213,7 +1216,7 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
             marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
             hovertemplate=(
                 "<b>%{hovertext}</b> (%{customdata[0]})<br>"
-                "FGM% UAST: %{x:.3f}<br>Possession+: %{y:.0f}<br>"
+                "FGM% UAST: %{x:.3f}<br>oRating+: %{y:.0f}<br>"
                 "Win%: %{customdata[1]:.3f}<extra></extra>"
             ),
             selector=dict(mode="markers"),
@@ -1403,17 +1406,23 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
             unsafe_allow_html=True,
         )
 
-        fgm_uast_col, off_rating_col, ts_pct_col = st.columns(3)
-        fgm_uast_col.markdown(
-            render_plain_metric("FGM% UAST", f"{team_profile_row['pct_uast_fgm']:.1%}"),
-            unsafe_allow_html=True,
-        )
+        off_rating_col, ts_pct_col, pos_e_col = st.columns(3)
         off_rating_col.markdown(
             render_plain_metric("Offensive Rating", f"{team_profile_row['off_rating']:.1f}"),
             unsafe_allow_html=True,
         )
         ts_pct_col.markdown(
             render_plain_metric("Team TS%", f"{team_profile_row['ts_pct']:.1%}"),
+            unsafe_allow_html=True,
+        )
+        pos_e_col.markdown(
+            render_plain_metric("Team PosE", f"{team_profile_row['team_possession_residual']:+.1f}"),
+            unsafe_allow_html=True,
+        )
+
+        _, fgm_uast_col, _ = st.columns(3)
+        fgm_uast_col.markdown(
+            render_plain_metric("FGM% UAST", f"{team_profile_row['pct_uast_fgm']:.1%}"),
             unsafe_allow_html=True,
         )
 
