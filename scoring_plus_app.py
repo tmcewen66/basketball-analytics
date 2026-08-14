@@ -1053,7 +1053,7 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
     table_df = table_source[[
         "team_name", "season", "w", "l", "w_pct",
         "team_orating_plus", "team_ts_plus", "team_possession_plus", "team_ppg",
-        "off_rating", "ts_pct", "team_possession_residual", "pct_uast_fgm",
+        "off_rating", "ts_pct", "team_possession_residual", "oreb_pct", "tm_tov_pct", "pct_uast_fgm",
     ]].rename(columns={
         "team_name": "Team Name",
         "season": "Season",
@@ -1067,6 +1067,8 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
         "off_rating": "ORating",
         "ts_pct": "TS%",
         "team_possession_residual": "PosE",
+        "oreb_pct": "OREB%",
+        "tm_tov_pct": "TOV%",
         "pct_uast_fgm": "FGM% UAST",
     })
     # Sorted on the unrounded oRating+ value; only the displayed text below is rounded.
@@ -1085,6 +1087,8 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
             "ORating": "{:.1f}",
             "TS%": "{:.3f}",
             "PosE": "{:+.1f}",
+            "OREB%": "{:.3f}",
+            "TOV%": "{:.3f}",
             "FGM% UAST": "{:.3f}",
         })
         .map(color_plus_metric, subset=["oRating+", "TS+", "Possession+"])
@@ -1107,6 +1111,8 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
             "ORating": st.column_config.NumberColumn(format="%.1f", width="small"),
             "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
             "PosE": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "OREB%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "TOV%": st.column_config.NumberColumn(format="%.3f", width="small"),
             "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
         },
     )
