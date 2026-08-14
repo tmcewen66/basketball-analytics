@@ -1049,7 +1049,7 @@ def render_compare(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
 # --- Teams page ---------------------------------------------------------------
 
 
-def render_team_stats_table(table_source: pd.DataFrame) -> None:
+def render_team_stats_table(df: pd.DataFrame, table_source: pd.DataFrame) -> None:
     table_df = table_source[[
         "team_name", "season", "w", "l", "w_pct",
         "team_orating_plus", "team_ts_plus", "team_possession_plus", "team_ppg",
@@ -1094,10 +1094,13 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
         .map(color_plus_metric, subset=["oRating+", "TS+", "Possession+"])
     )
 
-    st.dataframe(
+    event = st.dataframe(
         styled_table_df,
         use_container_width=True,
         hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="teams_stats_table",
         column_config={
             "Team Name": st.column_config.TextColumn(width="medium"),
             "Season": st.column_config.TextColumn(width="small"),
@@ -1117,8 +1120,21 @@ def render_team_stats_table(table_source: pd.DataFrame) -> None:
         },
     )
 
+    # Clicking a row jumps to that team/season on Team Breakdown. The dedupe guard
+    # keeps the selection (which persists in session_state across page switches)
+    # from re-triggering the same navigation every time the user returns here.
+    selected_rows = event["selection"]["rows"] if event else []
+    if selected_rows and st.session_state.get("_teams_table_last_nav_idx") != selected_rows[0]:
+        st.session_state["_teams_table_last_nav_idx"] = selected_rows[0]
+        clicked_row = table_df.iloc[selected_rows[0]]
+        target_upper = clicked_row["Team Name"].upper()
+        team_choice = REVERSED_TEAM_PROFILE_NAME_ALIASES.get(target_upper, target_upper)
+        st.session_state["team_breakdown_team"] = team_choice
+        st.session_state[f"team_breakdown_season_{team_choice}"] = clicked_row["Season"]
+        st.switch_page(team_breakdown_page)
 
-def render_teams(team_profile_df: pd.DataFrame) -> None:
+
+def render_teams(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
     render_top_nav("Teams")
 
     seasons_by_year = (
@@ -1268,7 +1284,7 @@ def render_teams(team_profile_df: pd.DataFrame) -> None:
 
     st.divider()
 
-    render_team_stats_table(filtered_df)
+    render_team_stats_table(df, filtered_df)
 
 
 # --- Team Breakdown page -----------------------------------------------------
@@ -1297,6 +1313,7 @@ def team_names(df: pd.DataFrame) -> list[str]:
 # The only known team-name spelling difference between player_profile (basketball-reference)
 # and team_profile (nba_api): player_profile -> team_profile.
 TEAM_PROFILE_NAME_ALIASES = {"LOS ANGELES CLIPPERS": "LA CLIPPERS"}
+REVERSED_TEAM_PROFILE_NAME_ALIASES = {v: k for k, v in TEAM_PROFILE_NAME_ALIASES.items()}
 
 
 def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
@@ -1573,7 +1590,7 @@ team_profile_df = load_team_profile()
 
 home_page = st.Page(lambda: render_home(df), title="Players", url_path="home", default=True)
 compare_page = st.Page(lambda: render_compare(df, team_profile_df), title="Compare", url_path="compare")
-teams_page = st.Page(lambda: render_teams(team_profile_df), title="Teams", url_path="teams")
+teams_page = st.Page(lambda: render_teams(df, team_profile_df), title="Teams", url_path="teams")
 team_breakdown_page = st.Page(
     lambda: render_team_breakdown(df, team_profile_df), title="Team Breakdown", url_path="team-breakdown"
 )
