@@ -1422,15 +1422,24 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
 
         fgm_uast_col, oreb_pct_col, tov_pct_col = st.columns(3)
         fgm_uast_col.markdown(
-            render_plain_metric("FGM% UAST", f"{team_profile_row['pct_uast_fgm']:.1%}"),
+            render_ranked_metric(
+                "FGM% UAST", f"{team_profile_row['pct_uast_fgm']:.1%}",
+                int(team_profile_row["pct_uast_fgm_rank"]), n_teams,
+            ),
             unsafe_allow_html=True,
         )
         oreb_pct_col.markdown(
-            render_plain_metric("O-Rebounding%", f"{team_profile_row['oreb_pct']:.1%}"),
+            render_ranked_metric(
+                "O-Rebounding%", f"{team_profile_row['oreb_pct']:.1%}",
+                int(team_profile_row["oreb_pct_rank"]), n_teams,
+            ),
             unsafe_allow_html=True,
         )
         tov_pct_col.markdown(
-            render_plain_metric("Turnover%", f"{team_profile_row['tm_tov_pct']:.1%}"),
+            render_ranked_metric(
+                "Turnover%", f"{team_profile_row['tm_tov_pct']:.1%}",
+                int(team_profile_row["tm_tov_pct_rank"]), n_teams,
+            ),
             unsafe_allow_html=True,
         )
 

@@ -52,12 +52,20 @@ def compute_team_scoring_plus(
             df.groupby("season_end_year")[col].rank(method="min", ascending=False).astype(int)
         )
 
+    # pct_uast_fgm and tm_tov_pct rank best-to-worst ascending (lower is better);
+    # oreb_pct ranks descending (higher is better), like the *_plus metrics above.
+    for col, ascending in (("pct_uast_fgm", True), ("oreb_pct", False), ("tm_tov_pct", True)):
+        df[f"{col}_rank"] = (
+            df.groupby("season_end_year")[col].rank(method="min", ascending=ascending).astype(int)
+        )
+
     return df[[
         "season_end_year", "team_id", "team_name", "gp", "w", "l", "w_pct",
         "off_rating", "ast_pct", "pct_uast_fgm", "ts_pct",
         "league_off_rating", "league_ast_pct", "league_pct_uast_fgm", "league_ts_pct",
         "team_orating_plus", "team_ts_plus", "team_possession_residual", "team_possession_plus",
         "oreb_pct", "tm_tov_pct", "team_orating_plus_rank", "team_ts_plus_rank", "team_possession_plus_rank",
+        "pct_uast_fgm_rank", "oreb_pct_rank", "tm_tov_pct_rank",
     ]]
 
 
