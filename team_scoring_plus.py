@@ -57,7 +57,7 @@ def compute_team_scoring_plus(
         "off_rating", "ast_pct", "pct_uast_fgm", "ts_pct",
         "league_off_rating", "league_ast_pct", "league_pct_uast_fgm", "league_ts_pct",
         "team_orating_plus", "team_ts_plus", "team_possession_residual", "team_possession_plus",
-        "team_orating_plus_rank", "team_ts_plus_rank", "team_possession_plus_rank",
+        "oreb_pct", "tm_tov_pct", "team_orating_plus_rank", "team_ts_plus_rank", "team_possession_plus_rank",
     ]]
 
 

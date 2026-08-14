@@ -1386,21 +1386,21 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
         op_col, tsp_col, pp_col = st.columns(3)
         op_col.markdown(
             render_ranked_metric(
-                "Team oRating+", f"{team_profile_row['team_orating_plus']:.0f}",
+                "oRating+", f"{team_profile_row['team_orating_plus']:.0f}",
                 int(team_profile_row["team_orating_plus_rank"]), n_teams,
             ),
             unsafe_allow_html=True,
         )
         tsp_col.markdown(
             render_ranked_metric(
-                "Team TS+", f"{team_profile_row['team_ts_plus']:.0f}",
+                "TS+", f"{team_profile_row['team_ts_plus']:.0f}",
                 int(team_profile_row["team_ts_plus_rank"]), n_teams,
             ),
             unsafe_allow_html=True,
         )
         pp_col.markdown(
             render_ranked_metric(
-                "Team Possession+", f"{team_profile_row['team_possession_plus']:.0f}",
+                "Possession+", f"{team_profile_row['team_possession_plus']:.0f}",
                 int(team_profile_row["team_possession_plus_rank"]), n_teams,
             ),
             unsafe_allow_html=True,
@@ -1412,17 +1412,25 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
             unsafe_allow_html=True,
         )
         ts_pct_col.markdown(
-            render_plain_metric("Team TS%", f"{team_profile_row['ts_pct']:.1%}"),
+            render_plain_metric("TS%", f"{team_profile_row['ts_pct']:.1%}"),
             unsafe_allow_html=True,
         )
         pos_e_col.markdown(
-            render_plain_metric("Team PosE", f"{team_profile_row['team_possession_residual']:+.1f}"),
+            render_plain_metric("PosE", f"{team_profile_row['team_possession_residual']:+.1f}"),
             unsafe_allow_html=True,
         )
 
-        _, fgm_uast_col, _ = st.columns(3)
+        fgm_uast_col, oreb_pct_col, tov_pct_col = st.columns(3)
         fgm_uast_col.markdown(
             render_plain_metric("FGM% UAST", f"{team_profile_row['pct_uast_fgm']:.1%}"),
+            unsafe_allow_html=True,
+        )
+        oreb_pct_col.markdown(
+            render_plain_metric("O-Rebounding%", f"{team_profile_row['oreb_pct']:.1%}"),
+            unsafe_allow_html=True,
+        )
+        tov_pct_col.markdown(
+            render_plain_metric("Turnover%", f"{team_profile_row['tm_tov_pct']:.1%}"),
             unsafe_allow_html=True,
         )
 
