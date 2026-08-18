@@ -238,7 +238,12 @@ def render_plain_metric(label: str, value: str) -> str:
 
 
 def render_top_nav(current_page: str) -> None:
-    st.title("NBA Scoring+ Explorer")
+    st.markdown(
+        "<h1 style='text-align:center; font-size:4rem; font-weight:800; margin:0 0 0.5rem;'>"
+        "<span style='color:#2a78d6;'>NBA</span><span style='color:#c0392b;'>+</span>"
+        "</h1>",
+        unsafe_allow_html=True,
+    )
     choice = st.pills(
         "Navigation",
         ["Players", "Teams", "Team Breakdown", "Compare", "Customized Analysis"],
@@ -1752,7 +1757,7 @@ TEAM_AXIS_EXCLUDED_COLS = {
     "season_end_year", "w", "l", "gp", "ast_pct",
     "league_ast_pct", "league_off_rating", "league_pct_uast_fgm", "league_ts_pct",
     "oreb_pct_rank", "pct_uast_fgm_rank", "team_orating_plus_rank", "team_possession_plus_rank",
-    "team_ts_plus_rank", "tm_tov_pct_rank",
+    "team_ts_plus_rank", "team_id", "tm_tov_pct_rank",
 }
 
 # Reuses the same friendly labels already shown in this app's tables/metric cards,
