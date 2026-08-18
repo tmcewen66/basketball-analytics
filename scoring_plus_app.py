@@ -241,7 +241,7 @@ def render_top_nav(current_page: str) -> None:
     st.title("NBA Scoring+ Explorer")
     choice = st.pills(
         "Navigation",
-        ["Players", "Teams", "Team Breakdown", "Compare"],
+        ["Players", "Teams", "Team Breakdown", "Compare", "Customized Analysis"],
         default=current_page,
         key="top_nav_pills",
         label_visibility="collapsed",
@@ -254,6 +254,8 @@ def render_top_nav(current_page: str) -> None:
         st.switch_page(teams_page)
     elif choice == "Team Breakdown" and current_page != "Team Breakdown":
         st.switch_page(team_breakdown_page)
+    elif choice == "Customized Analysis" and current_page != "Customized Analysis":
+        st.switch_page(customized_analysis_page)
     st.divider()
 
 
@@ -1738,6 +1740,76 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
     render_player_stats_table(team_season_source, show_team_season=False)
 
 
+# --- Customized Analysis page -------------------------------------------------
+
+
+def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
+    render_top_nav("Customized Analysis")
+
+    mode = st.selectbox(
+        "Players or Teams", ["Players", "Teams"], key="custom_analysis_mode"
+    )
+    source_df = df if mode == "Players" else team_profile_df
+    name_col = "player_name" if mode == "Players" else "team_name"
+
+    seasons_by_year = (
+        source_df[["season_end_year", "season"]]
+        .drop_duplicates()
+        .sort_values("season_end_year", ascending=False)
+    )
+    season_options = ["All Seasons"] + seasons_by_year["season"].tolist()
+    season_choices = st.multiselect(
+        "Season(s)", season_options, default=["All Seasons"], key=f"custom_analysis_seasons_{mode}"
+    )
+
+    st.divider()
+
+    if not season_choices:
+        st.info("Select at least one season.")
+        return
+
+    if "All Seasons" in season_choices:
+        filtered_df = source_df
+    else:
+        filtered_df = source_df[source_df["season"].isin(season_choices)]
+
+    numeric_cols = sorted(
+        col for col in source_df.columns if pd.api.types.is_numeric_dtype(source_df[col])
+    )
+    if not numeric_cols:
+        st.info("No numeric columns available.")
+        return
+
+    x_sel_col, y_sel_col = st.columns(2)
+    x_col = x_sel_col.selectbox(
+        "X-axis", numeric_cols, index=0, key=f"custom_analysis_x_{mode}"
+    )
+    y_col = y_sel_col.selectbox(
+        "Y-axis", numeric_cols, index=min(1, len(numeric_cols) - 1), key=f"custom_analysis_y_{mode}"
+    )
+
+    if filtered_df.empty:
+        st.info("No data for the selected season(s).")
+        return
+
+    scatter_fig = px.scatter(
+        filtered_df,
+        x=x_col,
+        y=y_col,
+        hover_name=name_col,
+        custom_data=["season"],
+        labels={x_col: x_col, y_col: y_col},
+    )
+    scatter_fig.update_traces(
+        marker=dict(size=8, opacity=0.85, color="#c9c8c2", line=dict(width=0)),
+        hovertemplate=(
+            "<b>%{hovertext}</b> (%{customdata[0]})<br>"
+            f"{x_col}: %{{x}}<br>{y_col}: %{{y}}<extra></extra>"
+        ),
+    )
+    st.plotly_chart(scatter_fig, use_container_width=True, key=f"custom_analysis_scatter_{mode}")
+
+
 df = load_player_profile()
 team_profile_df = load_team_profile()
 
@@ -1747,5 +1819,12 @@ teams_page = st.Page(lambda: render_teams(df, team_profile_df), title="Teams", u
 team_breakdown_page = st.Page(
     lambda: render_team_breakdown(df, team_profile_df), title="Team Breakdown", url_path="team-breakdown"
 )
+customized_analysis_page = st.Page(
+    lambda: render_customized_analysis(df, team_profile_df),
+    title="Customized Analysis",
+    url_path="customized-analysis",
+)
 
-st.navigation([home_page, teams_page, team_breakdown_page, compare_page], position="hidden").run()
+st.navigation(
+    [home_page, teams_page, team_breakdown_page, compare_page, customized_analysis_page], position="hidden"
+).run()
