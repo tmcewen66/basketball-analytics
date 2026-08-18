@@ -1789,10 +1789,10 @@ TEAM_AXIS_LABELS = {
     "tm_tov_pct": "TOV%",
     "balanced": "Balanced Players",
     "balanced_q": "Balanced Players (Qualified)",
-    "finishers": "Finishers Players",
-    "finishers_q": "Finishers Players (Qualified)",
-    "creators": "Creators Players",
-    "creators_q": "Creators Players (Qualified)",
+    "finishers": "Finisher Players",
+    "finishers_q": "Finisher Players (Qualified)",
+    "creators": "Creator Players",
+    "creators_q": "Creator Players (Qualified)",
 }
 
 
@@ -1810,6 +1810,13 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
     name_col = "player_name" if mode == "Players" else "team_name"
     excluded_cols = PLAYER_AXIS_EXCLUDED_COLS if mode == "Players" else TEAM_AXIS_EXCLUDED_COLS
     axis_labels = PLAYER_AXIS_LABELS if mode == "Players" else TEAM_AXIS_LABELS
+
+    if mode == "Players":
+        qualified_only = st.checkbox(
+            "Show qualified players only", value=False, key="custom_analysis_qualified_only"
+        )
+        if qualified_only:
+            source_df = source_df[source_df["qualified"]]
 
     seasons_by_year = (
         source_df[["season_end_year", "season"]]
@@ -1865,7 +1872,7 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
         labels={x_col: x_label, y_col: y_label},
     )
     scatter_fig.update_traces(
-        marker=dict(size=8, opacity=0.85, color="#c9c8c2", line=dict(width=0)),
+        marker=dict(size=8, opacity=0.85, color="#2a78d6", line=dict(width=0)),
         hovertemplate=(
             "<b>%{hovertext}</b> (%{customdata[0]})<br>"
             f"{x_label}: %{{x}}<br>{y_label}: %{{y}}<extra></extra>"
