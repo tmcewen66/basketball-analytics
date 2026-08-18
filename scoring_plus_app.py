@@ -38,6 +38,15 @@ def load_team_profile(db_path: str = DB_PATH) -> pd.DataFrame:
     return df
 
 
+@st.cache_data
+def load_team_colors(db_path: str = DB_PATH) -> pd.DataFrame:
+    with sqlite3.connect(db_path) as con:
+        return pd.read_sql(
+            "SELECT team_name, color_1_hex, color_1_general, color_2_hex, color_2_general FROM team_colors",
+            con,
+        )
+
+
 def uast_color(rating: float) -> str:
     """Maps a uast_rating to its Finisher/Balanced/Creator color: blue/gray/orange."""
     if rating <= -2:
@@ -95,6 +104,47 @@ def scoring_profile_badge_svg(profile: str, rating: float) -> str:
 PROFILE_COLORS = {"Finisher": "#2a78d6", "Balanced": "#6b6a66", "Creator": "#c2703b"}
 PLAYER1_COLOR = "#c9a227"  # gold
 PLAYER2_COLOR = "#1a8a8a"  # teal
+
+
+def team_color_row(team_colors_df: pd.DataFrame, team_name: str | None) -> pd.Series | None:
+    """Looks up a team's row in team_colors by name.
+
+    Tolerates the basketball-reference/nba_api spelling split already handled by
+    REVERSED_TEAM_PROFILE_NAME_ALIASES (e.g. "LA Clippers" -> "Los Angeles Clippers"),
+    and a traded player's "TeamA/TeamB" combo team_name by using the last team listed.
+    """
+    if not team_name:
+        return None
+    target_upper = team_name.split("/")[-1].strip().upper()
+    names_upper = team_colors_df["team_name"].str.upper()
+    match = team_colors_df[names_upper == target_upper]
+    if match.empty:
+        alias = REVERSED_TEAM_PROFILE_NAME_ALIASES.get(target_upper)
+        if alias:
+            match = team_colors_df[names_upper == alias]
+    return match.iloc[0] if not match.empty else None
+
+
+def resolve_compare_colors(
+    team_colors_df: pd.DataFrame, team_name_1: str | None, team_name_2: str | None
+) -> tuple[str, str]:
+    """Picks each side's color_1_hex, falling back to the default gold/teal when a
+    team isn't in team_colors. Side 2 gets priority-bumped to its color_2_hex when
+    its color_1_general matches side 1's, so the two sides never look the same.
+    """
+    row1 = team_color_row(team_colors_df, team_name_1)
+    row2 = team_color_row(team_colors_df, team_name_2)
+
+    color1 = row1["color_1_hex"] if row1 is not None else PLAYER1_COLOR
+
+    if row2 is None:
+        color2 = PLAYER2_COLOR
+    elif row1 is not None and row2["color_1_general"] == row1["color_1_general"]:
+        color2 = row2["color_2_hex"]
+    else:
+        color2 = row2["color_1_hex"]
+
+    return color1, color2
 
 
 def hex_to_rgba(hex_color: str, alpha: float) -> str:
@@ -235,6 +285,20 @@ def render_plain_metric(label: str, value: str) -> str:
         f"<div style='font-size:2rem; font-weight:600; line-height:1.25;'>{value}</div>"
         "</div>"
     )
+
+
+def render_colored_subheader(text: str, color: str | None, container=None) -> None:
+    """Like st.subheader, but in `color` when one is given (matches st.subheader's
+    own font-size/weight so it doesn't move when a team color is available)."""
+    container = container or st
+    if color:
+        container.markdown(
+            f"<h3 style='color:{color}; font-size:28px; font-weight:600; margin:0;'>"
+            f"{html.escape(text)}</h3>",
+            unsafe_allow_html=True,
+        )
+    else:
+        container.subheader(text)
 
 
 def render_top_nav(current_page: str) -> None:
@@ -738,7 +802,8 @@ def render_compare_table(row: pd.Series | None, other_row: pd.Series | None, acc
 
 
 def render_compare_scatter(
-    df: pd.DataFrame, p1_row: pd.Series | None, p2_row: pd.Series | None, plot_choice: str
+    df: pd.DataFrame, p1_row: pd.Series | None, p2_row: pd.Series | None, plot_choice: str,
+    color1: str = PLAYER1_COLOR, color2: str = PLAYER2_COLOR,
 ) -> None:
     qualified_df = df[df["qualified"]]
 
@@ -783,7 +848,7 @@ def render_compare_scatter(
         scatter_fig.update_xaxes(range=[x0, x1], title=x_label)
         scatter_fig.add_vline(x=100, line_dash="dash", line_color="#898781")
 
-    for row, color in [(p1_row, PLAYER1_COLOR), (p2_row, PLAYER2_COLOR)]:
+    for row, color in [(p1_row, color1), (p2_row, color2)]:
         if row is None:
             continue
         scatter_fig.add_trace(go.Scatter(
@@ -802,7 +867,7 @@ def render_compare_scatter(
     st.plotly_chart(scatter_fig, use_container_width=True, key=f"compare_scatter_chart_{plot_choice}")
 
 
-def render_compare_players(df: pd.DataFrame) -> None:
+def render_compare_players(df: pd.DataFrame, team_colors_df: pd.DataFrame) -> None:
     search_col1, search_col2 = st.columns(2)
 
     with search_col1:
@@ -821,11 +886,17 @@ def render_compare_players(df: pd.DataFrame) -> None:
             p2_season = player_season_widget(df, p2_id, "cmp2")
             p2_row = df[(df["player_id"] == p2_id) & (df["season"] == p2_season)].iloc[0]
 
+    color1, color2 = resolve_compare_colors(
+        team_colors_df,
+        p1_row["team_name"] if p1_row is not None else None,
+        p2_row["team_name"] if p2_row is not None else None,
+    )
+
     st.divider()
 
     table_col1, scatter_col, table_col2 = st.columns([1, 1.6, 1])
     with table_col1:
-        st.markdown(render_compare_table(p1_row, p2_row, PLAYER1_COLOR), unsafe_allow_html=True)
+        st.markdown(render_compare_table(p1_row, p2_row, color1), unsafe_allow_html=True)
     with scatter_col:
         plot_choice = st.selectbox(
             "Scatter plot",
@@ -833,9 +904,9 @@ def render_compare_players(df: pd.DataFrame) -> None:
             key="compare_scatter_choice",
             label_visibility="collapsed",
         )
-        render_compare_scatter(df, p1_row, p2_row, plot_choice)
+        render_compare_scatter(df, p1_row, p2_row, plot_choice, color1, color2)
     with table_col2:
-        st.markdown(render_compare_table(p2_row, p1_row, PLAYER2_COLOR), unsafe_allow_html=True)
+        st.markdown(render_compare_table(p2_row, p1_row, color2), unsafe_allow_html=True)
 
 
 # (column, label, kind) in display order, mirroring COMPARE_ROWS above but for team_profile rows.
@@ -910,7 +981,10 @@ def render_team_compare_table(row: pd.Series | None, other_row: pd.Series | None
     return "".join(lines)
 
 
-def render_team_compare_profile_bar(t1_row: pd.Series | None, t2_row: pd.Series | None) -> None:
+def render_team_compare_profile_bar(
+    t1_row: pd.Series | None, t2_row: pd.Series | None,
+    color1: str = PLAYER1_COLOR, color2: str = PLAYER2_COLOR,
+) -> None:
     qualified_only = st.checkbox(
         "Qualified players only", value=True, key="compare_team_breakdown_qualified_only"
     )
@@ -922,7 +996,7 @@ def render_team_compare_profile_bar(t1_row: pd.Series | None, t2_row: pd.Series 
 
     bar_fig = go.Figure()
     max_value = 0
-    for row, color in [(t1_row, PLAYER1_COLOR), (t2_row, PLAYER2_COLOR)]:
+    for row, color in [(t1_row, color1), (t2_row, color2)]:
         if row is None:
             continue
         values = [row[col] for col in profile_cols]
@@ -949,10 +1023,11 @@ def render_team_compare_profile_bar(t1_row: pd.Series | None, t2_row: pd.Series 
 
 
 def render_team_compare_scatter(
-    team_profile_df: pd.DataFrame, t1_row: pd.Series | None, t2_row: pd.Series | None, plot_choice: str
+    team_profile_df: pd.DataFrame, t1_row: pd.Series | None, t2_row: pd.Series | None, plot_choice: str,
+    color1: str = PLAYER1_COLOR, color2: str = PLAYER2_COLOR,
 ) -> None:
     if plot_choice == "Breakdown":
-        render_team_compare_profile_bar(t1_row, t2_row)
+        render_team_compare_profile_bar(t1_row, t2_row, color1, color2)
         return
 
     if plot_choice == "Turnover% vs O-Rebounding%":
@@ -1060,7 +1135,7 @@ def render_team_compare_scatter(
         scatter_fig.update_xaxes(range=[x0, x1], title=x_label)
         scatter_fig.add_vline(x=100, line_dash="dash", line_color="#898781")
 
-    for row, color in [(t1_row, PLAYER1_COLOR), (t2_row, PLAYER2_COLOR)]:
+    for row, color in [(t1_row, color1), (t2_row, color2)]:
         if row is None:
             continue
         scatter_fig.add_trace(go.Scatter(
@@ -1079,7 +1154,7 @@ def render_team_compare_scatter(
     st.plotly_chart(scatter_fig, use_container_width=True, key=f"team_compare_scatter_chart_{plot_choice}")
 
 
-def render_compare_teams(team_profile_df: pd.DataFrame) -> None:
+def render_compare_teams(team_profile_df: pd.DataFrame, team_colors_df: pd.DataFrame) -> None:
     team_col1, team_col2 = st.columns(2)
 
     with team_col1:
@@ -1090,11 +1165,13 @@ def render_compare_teams(team_profile_df: pd.DataFrame) -> None:
         st.subheader("Team 2")
         t2_row = team_select_widget(team_profile_df, "cmp_team2")
 
+    color1, color2 = resolve_compare_colors(team_colors_df, t1_row["team_name"], t2_row["team_name"])
+
     st.divider()
 
     table_col1, scatter_col, table_col2 = st.columns([1, 1.6, 1])
     with table_col1:
-        st.markdown(render_team_compare_table(t1_row, t2_row, PLAYER1_COLOR), unsafe_allow_html=True)
+        st.markdown(render_team_compare_table(t1_row, t2_row, color1), unsafe_allow_html=True)
     with scatter_col:
         plot_choice = st.selectbox(
             "Scatter plot",
@@ -1102,12 +1179,12 @@ def render_compare_teams(team_profile_df: pd.DataFrame) -> None:
             key="compare_team_scatter_choice",
             label_visibility="collapsed",
         )
-        render_team_compare_scatter(team_profile_df, t1_row, t2_row, plot_choice)
+        render_team_compare_scatter(team_profile_df, t1_row, t2_row, plot_choice, color1, color2)
     with table_col2:
-        st.markdown(render_team_compare_table(t2_row, t1_row, PLAYER2_COLOR), unsafe_allow_html=True)
+        st.markdown(render_team_compare_table(t2_row, t1_row, color2), unsafe_allow_html=True)
 
 
-def render_compare(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
+def render_compare(df: pd.DataFrame, team_profile_df: pd.DataFrame, team_colors_df: pd.DataFrame) -> None:
     render_top_nav("Compare")
     st.subheader("Compare")
     compare_mode = st.selectbox(
@@ -1116,9 +1193,9 @@ def render_compare(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
     st.divider()
 
     if compare_mode == "Players":
-        render_compare_players(df)
+        render_compare_players(df, team_colors_df)
     else:
-        render_compare_teams(team_profile_df)
+        render_compare_teams(team_profile_df, team_colors_df)
 
 
 # --- Teams page ---------------------------------------------------------------
@@ -1480,7 +1557,9 @@ TEAM_PROFILE_NAME_ALIASES = {"LOS ANGELES CLIPPERS": "LA CLIPPERS"}
 REVERSED_TEAM_PROFILE_NAME_ALIASES = {v: k for k, v in TEAM_PROFILE_NAME_ALIASES.items()}
 
 
-def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
+def render_team_breakdown(
+    df: pd.DataFrame, team_profile_df: pd.DataFrame, team_colors_df: pd.DataFrame
+) -> None:
     render_top_nav("Team Breakdown")
 
     # Centers st.metric's label/value/delta so they line up with render_stat_box's
@@ -1510,7 +1589,9 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
         "Show qualified players only", value=False, key="team_breakdown_qualified_only"
     )
 
-    st.subheader(f"{team_choice.title()} {season_choice} Breakdown")
+    team_color_row_match = team_color_row(team_colors_df, team_choice)
+    team_title_color = team_color_row_match["color_1_hex"] if team_color_row_match is not None else None
+    render_colored_subheader(f"{team_choice.title()} {season_choice} Breakdown", team_title_color)
 
     team_season_df = df[team_mask & (df["season"] == season_choice)]
     team_season_source = team_season_df[team_season_df["qualified"]] if qualified_only else team_season_df
@@ -1639,7 +1720,9 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
         key="team_breakdown_scatter_choice",
         label_visibility="collapsed",
     )
-    title_col.subheader(f"{team_choice.title()} {season_choice} {plot_choice}")
+    render_colored_subheader(
+        f"{team_choice.title()} {season_choice} {plot_choice}", team_title_color, title_col
+    )
     title_col.caption(f"{'Qualified' if qualified_only else 'All'} Players — {season_choice}")
     st.markdown(
         "*The Data Point Size Is Relative To The Amount Of Minutes Played By The Player*"
@@ -1919,12 +2002,16 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
 
 df = load_player_profile()
 team_profile_df = load_team_profile()
+team_colors_df = load_team_colors()
 
 home_page = st.Page(lambda: render_home(df), title="Players", url_path="home", default=True)
-compare_page = st.Page(lambda: render_compare(df, team_profile_df), title="Compare", url_path="compare")
+compare_page = st.Page(
+    lambda: render_compare(df, team_profile_df, team_colors_df), title="Compare", url_path="compare"
+)
 teams_page = st.Page(lambda: render_teams(df, team_profile_df), title="Teams", url_path="teams")
 team_breakdown_page = st.Page(
-    lambda: render_team_breakdown(df, team_profile_df), title="Team Breakdown", url_path="team-breakdown"
+    lambda: render_team_breakdown(df, team_profile_df, team_colors_df),
+    title="Team Breakdown", url_path="team-breakdown",
 )
 customized_analysis_page = st.Page(
     lambda: render_customized_analysis(df, team_profile_df),
