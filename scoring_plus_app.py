@@ -153,6 +153,13 @@ def hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
+def marker_outline_color(fill_hex: str) -> str:
+    """White outline on markers reads as a subtle ring against most fills, but a
+    white-filled marker (e.g. the Nets' color_2_hex) would vanish against the
+    page background, so those get a black outline instead."""
+    return "black" if fill_hex.strip().lower() in ("#fff", "#ffffff", "white") else "white"
+
+
 def render_stat_box(label: str, value, color: str) -> str:
     bg_color = hex_to_rgba(color, 0.15)
     return (
@@ -855,7 +862,7 @@ def render_compare_scatter(
             x=[row[x_col]],
             y=[row[y_col]],
             mode="markers",
-            marker=dict(size=13, color=color, line=dict(width=1.5, color="white")),
+            marker=dict(size=13, color=color, line=dict(width=1.5, color=marker_outline_color(color))),
             name=f"{row['player_name']} ({row['season']})",
             hovertemplate=(
                 f"<b>{html.escape(str(row['player_name']))}</b> ({row['season']})<br>"
@@ -1008,7 +1015,7 @@ def render_team_compare_profile_bar(
             textposition="outside",
             cliponaxis=False,
             name=f"{row['team_name']} ({row['season']})",
-            marker_color=color,
+            marker=dict(color=color, line=dict(width=1, color=marker_outline_color(color))),
             hovertemplate=(
                 f"<b>{html.escape(str(row['team_name']))}</b> ({row['season']})<br>"
                 "%{x}: %{y}<extra></extra>"
@@ -1142,7 +1149,7 @@ def render_team_compare_scatter(
             x=[row[x_col]],
             y=[row[y_col]],
             mode="markers",
-            marker=dict(size=13, color=color, line=dict(width=1.5, color="white")),
+            marker=dict(size=13, color=color, line=dict(width=1.5, color=marker_outline_color(color))),
             name=f"{row['team_name']} ({row['season']})",
             hovertemplate=(
                 f"<b>{html.escape(str(row['team_name']))}</b> ({row['season']})<br>"
