@@ -65,6 +65,8 @@ def compute_derived_stats(
     # --- Per-game convenience columns ---
     df["points_per_game"] = df["points"] / gp
     df["assists_per_game"] = df["assists"] / gp
+    df["offensive_rebounds_per_game"] = df["offensive_rebounds"] / gp
+    df["defensive_rebounds_per_game"] = df["defensive_rebounds"] / gp
     df["total_rebounds_per_game"] = (
         df["offensive_rebounds"] + df["defensive_rebounds"]
     ) / gp

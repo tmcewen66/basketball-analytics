@@ -22,8 +22,9 @@ def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.
         )
         derived = pd.read_sql(
             "SELECT slug, season_end_year, age, positions, team, games_played, minutes_per_game, minutes_played, points_per_game, fg_percentage, "
-            "three_point_percentage, ft_percentage, assists_per_game, total_rebounds_per_game, "
-            "turnovers_per_game, steals_per_game, blocks_per_game FROM derived_stats",
+            "three_point_percentage, ft_percentage, assists_per_game, offensive_rebounds_per_game, "
+            "defensive_rebounds_per_game, total_rebounds_per_game, "
+            "turnovers_per_game, steals_per_game, blocks_per_game, stocks_per_game FROM derived_stats",
             con,
         )
         per_100 = pd.read_sql(
@@ -56,7 +57,8 @@ def compute_player_profile(
         "player_name", "team_name", "team_abbreviation", "team_id", "season_end_year", "season", "slug", "player_id", "games_played",
         "minutes_per_game", "minutes_played", "scoring_plus", "pts_plus", "ts_plus", "per_100_pts", "true_shooting_percentage",
         "age", "positions", "points_per_game", "fg_percentage", "three_point_percentage", "ft_percentage",
-        "assists_per_game", "total_rebounds_per_game", "turnovers_per_game", "steals_per_game", "blocks_per_game",
+        "assists_per_game", "offensive_rebounds_per_game", "defensive_rebounds_per_game",
+        "total_rebounds_per_game", "turnovers_per_game", "steals_per_game", "blocks_per_game", "stocks_per_game",
         "per_100_reb", "per_100_ast", "per_100_stl", "per_100_blk", "per_100_tov", "qualified",
         "qualified_ast", "pct_uast_fgm", "uast_bin", "uast_rating", "profile",
     ]]
