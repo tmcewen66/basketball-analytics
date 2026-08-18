@@ -1743,6 +1743,63 @@ def render_team_breakdown(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> No
 # --- Customized Analysis page -------------------------------------------------
 
 
+# Columns that are technically numeric but aren't meaningful to plot (ids, flags, raw
+# season/win-loss counts already covered by w_pct, league baselines, redundant ranks).
+PLAYER_AXIS_EXCLUDED_COLS = {
+    "player_id", "qualified", "qualified_ast", "season_end_year", "team_id", "uast_bin",
+}
+TEAM_AXIS_EXCLUDED_COLS = {
+    "season_end_year", "w", "l", "gp",
+    "league_ast_pct", "league_off_rating", "league_pct_uast_fgm", "league_ts_pct",
+    "oreb_pct_rank", "pct_uast_fgm", "team_orating_plus_rank", "team_possession_plus_rank",
+    "team_ts_plus_rank", "tm_tov_pct_rank",
+}
+
+# Reuses the same friendly labels already shown in this app's tables/metric cards,
+# so a variable reads the same way here as it does everywhere else.
+PLAYER_AXIS_LABELS = {
+    "games_played": "GP",
+    "minutes_per_game": "MPG",
+    "scoring_plus": "Scoring+",
+    "pts_plus": "PTS+",
+    "ts_plus": "TS+",
+    "points_per_game": "PPG",
+    "per_100_pts": "PTS per 100",
+    "true_shooting_percentage": "TS%",
+    "pct_uast_fgm": "FGM% UAST",
+    "age": "Age",
+    "fg_percentage": "FG%",
+    "three_point_percentage": "3P%",
+    "ft_percentage": "FT%",
+    "uast_rating": "UAST Rating",
+}
+TEAM_AXIS_LABELS = {
+    "w_pct": "Win%",
+    "team_orating_plus": "oRating+",
+    "team_ts_plus": "TS+",
+    "team_possession_plus": "Possession+",
+    "team_ppg": "PPG",
+    "off_rating": "Offensive Rating",
+    "team_fg_pct": "FG%",
+    "team_3pt_pct": "3P%",
+    "team_ft_pct": "FT%",
+    "ts_pct": "TS%",
+    "team_possession_residual": "PosE",
+    "oreb_pct": "OREB%",
+    "tm_tov_pct": "TOV%",
+    "balanced": "Balanced Players",
+    "balanced_q": "Balanced Players (Qualified)",
+    "finishers": "Finishers Players",
+    "finishers_q": "Finishers Players (Qualified)",
+    "creators": "Creators Players",
+    "creators_q": "Creators Players (Qualified)",
+}
+
+
+def format_axis_label(col: str, overrides: dict[str, str]) -> str:
+    return overrides.get(col, col.replace("_", " ").title())
+
+
 def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
     render_top_nav("Customized Analysis")
 
@@ -1751,6 +1808,8 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
     )
     source_df = df if mode == "Players" else team_profile_df
     name_col = "player_name" if mode == "Players" else "team_name"
+    excluded_cols = PLAYER_AXIS_EXCLUDED_COLS if mode == "Players" else TEAM_AXIS_EXCLUDED_COLS
+    axis_labels = PLAYER_AXIS_LABELS if mode == "Players" else TEAM_AXIS_LABELS
 
     seasons_by_year = (
         source_df[["season_end_year", "season"]]
@@ -1773,20 +1832,25 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
     else:
         filtered_df = source_df[source_df["season"].isin(season_choices)]
 
-    numeric_cols = sorted(
-        col for col in source_df.columns if pd.api.types.is_numeric_dtype(source_df[col])
-    )
+    numeric_cols = [
+        col for col in source_df.columns
+        if pd.api.types.is_numeric_dtype(source_df[col]) and col not in excluded_cols
+    ]
     if not numeric_cols:
         st.info("No numeric columns available.")
         return
 
+    label_to_col = {format_axis_label(col, axis_labels): col for col in numeric_cols}
+    sorted_labels = sorted(label_to_col.keys())
+
     x_sel_col, y_sel_col = st.columns(2)
-    x_col = x_sel_col.selectbox(
-        "X-axis", numeric_cols, index=0, key=f"custom_analysis_x_{mode}"
+    x_label = x_sel_col.selectbox(
+        "X-axis", sorted_labels, index=0, key=f"custom_analysis_x_{mode}"
     )
-    y_col = y_sel_col.selectbox(
-        "Y-axis", numeric_cols, index=min(1, len(numeric_cols) - 1), key=f"custom_analysis_y_{mode}"
+    y_label = y_sel_col.selectbox(
+        "Y-axis", sorted_labels, index=min(1, len(sorted_labels) - 1), key=f"custom_analysis_y_{mode}"
     )
+    x_col, y_col = label_to_col[x_label], label_to_col[y_label]
 
     if filtered_df.empty:
         st.info("No data for the selected season(s).")
@@ -1798,13 +1862,13 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
         y=y_col,
         hover_name=name_col,
         custom_data=["season"],
-        labels={x_col: x_col, y_col: y_col},
+        labels={x_col: x_label, y_col: y_label},
     )
     scatter_fig.update_traces(
         marker=dict(size=8, opacity=0.85, color="#c9c8c2", line=dict(width=0)),
         hovertemplate=(
             "<b>%{hovertext}</b> (%{customdata[0]})<br>"
-            f"{x_col}: %{{x}}<br>{y_col}: %{{y}}<extra></extra>"
+            f"{x_label}: %{{x}}<br>{y_label}: %{{y}}<extra></extra>"
         ),
     )
     st.plotly_chart(scatter_fig, use_container_width=True, key=f"custom_analysis_scatter_{mode}")
