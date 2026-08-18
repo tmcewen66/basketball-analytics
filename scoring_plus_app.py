@@ -244,6 +244,10 @@ def render_top_nav(current_page: str) -> None:
         "</h1>",
         unsafe_allow_html=True,
     )
+    st.markdown(
+        "<style>.st-key-top_nav_pills { margin-left:auto; margin-right:auto; }</style>",
+        unsafe_allow_html=True,
+    )
     choice = st.pills(
         "Navigation",
         ["Players", "Teams", "Team Breakdown", "Compare", "Customized Analysis"],
