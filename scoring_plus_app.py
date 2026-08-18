@@ -1246,7 +1246,7 @@ def render_teams(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
     title_col, dropdown_col = st.columns([3, 1])
     plot_choice = dropdown_col.selectbox(
         "Scatter plot",
-        ["FGM% UAST vs oRating+", "TS+ vs oRating+", "Turnover% vs O-Rebounding%"],
+        ["FGM% UAST vs oRating+", "TS+ vs oRating+", "Win% vs oRating+", "Turnover% vs O-Rebounding%"],
         key="teams_scatter_choice",
         label_visibility="collapsed",
     )
@@ -1346,7 +1346,45 @@ def render_teams(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
         scatter_fig.update_yaxes(range=[y0, y1])
         st.plotly_chart(scatter_fig, use_container_width=True, key="teams_scatter_chart_ts_pts")
 
-    else:
+    elif plot_choice == "Win% vs oRating+":
+        y_max_dev = (filtered_df["team_orating_plus"] - 100).abs().max() if not filtered_df.empty else 10
+        y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
+
+        if not filtered_df.empty:
+            min_val = filtered_df["team_orating_plus"].min()
+            max_val = filtered_df["team_orating_plus"].max()
+        else:
+            min_val = max_val = 100
+        marker_colors = [
+            scoring_plus_gradient_color(v, min_val, max_val) for v in filtered_df["team_orating_plus"]
+        ]
+
+        scatter_fig = px.scatter(
+            filtered_df,
+            x="w_pct",
+            y="team_orating_plus",
+            hover_name="team_name",
+            custom_data=["season", "team_orating_plus"],
+            labels={"w_pct": "Win%", "team_orating_plus": "oRating+"},
+        )
+        scatter_fig.update_traces(
+            marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
+            hovertemplate=(
+                "<b>%{hovertext}</b> (%{customdata[0]})<br>"
+                "oRating+: %{y:.0f}<br>"
+                "Win%: %{x:.3f}<extra></extra>"
+            ),
+        )
+        scatter_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+        scatter_fig.update_yaxes(range=[y0, y1])
+
+        if not filtered_df.empty:
+            x_min, x_max = filtered_df["w_pct"].min(), filtered_df["w_pct"].max()
+            x_pad = (x_max - x_min) * 0.05
+            scatter_fig.update_xaxes(range=[x_min - x_pad, x_max + x_pad])
+        st.plotly_chart(scatter_fig, use_container_width=True, key="teams_scatter_chart_winpct")
+
+    elif plot_choice == "Turnover% vs O-Rebounding%":
         if not filtered_df.empty:
             pose_min = filtered_df["team_possession_residual"].min()
             pose_max = filtered_df["team_possession_residual"].max()
