@@ -1749,9 +1749,9 @@ PLAYER_AXIS_EXCLUDED_COLS = {
     "player_id", "qualified", "qualified_ast", "season_end_year", "team_id", "uast_bin",
 }
 TEAM_AXIS_EXCLUDED_COLS = {
-    "season_end_year", "w", "l", "gp",
+    "season_end_year", "w", "l", "gp", "ast_pct",
     "league_ast_pct", "league_off_rating", "league_pct_uast_fgm", "league_ts_pct",
-    "oreb_pct_rank", "pct_uast_fgm", "team_orating_plus_rank", "team_possession_plus_rank",
+    "oreb_pct_rank", "pct_uast_fgm_rank", "team_orating_plus_rank", "team_possession_plus_rank",
     "team_ts_plus_rank", "tm_tov_pct_rank",
 }
 
@@ -1784,6 +1784,7 @@ TEAM_AXIS_LABELS = {
     "team_3pt_pct": "3P%",
     "team_ft_pct": "FT%",
     "ts_pct": "TS%",
+    "pct_uast_fgm": "FGM% UAST",
     "team_possession_residual": "PosE",
     "oreb_pct": "OREB%",
     "tm_tov_pct": "TOV%",
