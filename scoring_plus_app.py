@@ -1801,6 +1801,27 @@ def format_axis_label(col: str, overrides: dict[str, str]) -> str:
     return overrides.get(col, col.replace("_", " ").title())
 
 
+# Plus-stats round to a whole number; percentage-style stats keep 3 decimals;
+# everything else on the Customized Analysis plot rounds to 1 decimal.
+CUSTOM_ANALYSIS_WHOLE_NUMBER_COLS = {
+    "scoring_plus", "pts_plus", "ts_plus",
+    "team_orating_plus", "team_ts_plus", "team_possession_plus",
+}
+CUSTOM_ANALYSIS_THREE_DECIMAL_COLS = {
+    "w_pct", "fg_percentage", "three_point_percentage", "ft_percentage",
+    "true_shooting_percentage", "pct_uast_fgm", "team_fg_pct", "team_3pt_pct",
+    "team_ft_pct", "ts_pct",
+}
+
+
+def custom_analysis_value_format(col: str) -> str:
+    if col in CUSTOM_ANALYSIS_WHOLE_NUMBER_COLS:
+        return ".0f"
+    if col in CUSTOM_ANALYSIS_THREE_DECIMAL_COLS:
+        return ".3f"
+    return ".1f"
+
+
 def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
     render_top_nav("Customized Analysis")
 
@@ -1864,6 +1885,9 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
         st.info("No data for the selected season(s).")
         return
 
+    x_fmt = custom_analysis_value_format(x_col)
+    y_fmt = custom_analysis_value_format(y_col)
+
     scatter_fig = px.scatter(
         filtered_df,
         x=x_col,
@@ -1872,11 +1896,13 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
         custom_data=["season"],
         labels={x_col: x_label, y_col: y_label},
     )
+    scatter_fig.update_xaxes(tickformat=x_fmt)
+    scatter_fig.update_yaxes(tickformat=y_fmt)
     scatter_fig.update_traces(
         marker=dict(size=8, opacity=0.85, color="#2a78d6", line=dict(width=0)),
         hovertemplate=(
             "<b>%{hovertext}</b> (%{customdata[0]})<br>"
-            f"{x_label}: %{{x}}<br>{y_label}: %{{y}}<extra></extra>"
+            f"{x_label}: %{{x:{x_fmt}}}<br>{y_label}: %{{y:{y_fmt}}}<extra></extra>"
         ),
     )
     st.plotly_chart(scatter_fig, use_container_width=True, key=f"custom_analysis_scatter_{mode}")
