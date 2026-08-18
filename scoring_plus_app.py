@@ -1350,15 +1350,6 @@ def render_teams(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
         y_max_dev = (filtered_df["team_orating_plus"] - 100).abs().max() if not filtered_df.empty else 10
         y0, y1 = 100 - y_max_dev * 1.1, 100 + y_max_dev * 1.1
 
-        if not filtered_df.empty:
-            min_val = filtered_df["team_orating_plus"].min()
-            max_val = filtered_df["team_orating_plus"].max()
-        else:
-            min_val = max_val = 100
-        marker_colors = [
-            scoring_plus_gradient_color(v, min_val, max_val) for v in filtered_df["team_orating_plus"]
-        ]
-
         scatter_fig = px.scatter(
             filtered_df,
             x="w_pct",
@@ -1368,7 +1359,7 @@ def render_teams(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
             labels={"w_pct": "Win%", "team_orating_plus": "oRating+"},
         )
         scatter_fig.update_traces(
-            marker=dict(size=8, opacity=0.85, color=marker_colors, line=dict(width=0)),
+            marker=dict(size=8, opacity=0.85, color="#c9c8c2", line=dict(width=0)),
             hovertemplate=(
                 "<b>%{hovertext}</b> (%{customdata[0]})<br>"
                 "oRating+: %{y:.0f}<br>"
