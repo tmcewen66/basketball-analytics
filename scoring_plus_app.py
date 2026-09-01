@@ -285,6 +285,19 @@ def render_ranked_metric(label: str, value: str, rank: int, n_teams: int) -> str
     )
 
 
+def render_record_box(w: int, l: int, rank: int, n_teams: int) -> str:
+    return (
+        "<div style='text-align:center;'>"
+        "<div style='font-size:0.875rem; opacity:0.7;'>Record</div>"
+        f"<div style='font-size:2.25rem; font-weight:700; line-height:1.25;'>{w}-{l}</div>"
+        "<div style='margin-top:0.25rem; margin-bottom:0.75rem;'>"
+        f"<span style='background-color:rgba(128,128,128,0.15); border-radius:999px; "
+        f"padding:2px 10px; font-size:0.8rem; opacity:0.85;'>Rank {rank} of {n_teams} (Win%)</span>"
+        "</div>"
+        "</div>"
+    )
+
+
 def render_plain_metric(label: str, value: str) -> str:
     return (
         "<div style='text-align:center;'>"
@@ -1716,14 +1729,17 @@ def render_team_breakdown(
 
     if team_profile_row is not None:
         n_teams = len(team_profile_season)
+        w_pct_rank = int(
+            team_profile_season["w_pct"]
+            .rank(method="min", ascending=False)
+            .loc[team_profile_row.name]
+        )
 
         _, record_top_col2, _ = st.columns(3)
         record_top_col2.markdown(
-            "<div style='text-align:center;'>"
-            "<div style='font-size:0.875rem; opacity:0.7;'>Record</div>"
-            f"<div style='font-size:2.25rem; font-weight:700; line-height:1.25;'>"
-            f"{int(team_profile_row['w'])}-{int(team_profile_row['l'])}</div>"
-            "</div>",
+            render_record_box(
+                int(team_profile_row["w"]), int(team_profile_row["l"]), w_pct_rank, n_teams
+            ),
             unsafe_allow_html=True,
         )
 
