@@ -292,7 +292,7 @@ def render_record_box(w: int, l: int, rank: int, n_teams: int) -> str:
         f"<div style='font-size:2.25rem; font-weight:700; line-height:1.25;'>{w}-{l}</div>"
         "<div style='margin-top:0.25rem; margin-bottom:0.75rem;'>"
         f"<span style='background-color:rgba(128,128,128,0.15); border-radius:999px; "
-        f"padding:2px 10px; font-size:0.8rem; opacity:0.85;'>Rank {rank} of {n_teams} (Win%)</span>"
+        f"padding:2px 10px; font-size:0.8rem; opacity:0.85;'>Rank {rank} of {n_teams}</span>"
         "</div>"
         "</div>"
     )
