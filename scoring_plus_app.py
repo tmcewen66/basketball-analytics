@@ -321,12 +321,14 @@ def render_top_nav(current_page: str) -> None:
     )
     choice = st.pills(
         "Navigation",
-        ["Players", "Teams", "Team Breakdown", "Compare", "Customized Analysis"],
+        ["Home", "Players", "Teams", "Team Breakdown", "Compare", "Customized Analysis"],
         default=current_page,
         key="top_nav_pills",
         label_visibility="collapsed",
     )
-    if choice == "Players" and current_page != "Players":
+    if choice == "Home" and current_page != "Home":
+        st.switch_page(landing_page)
+    elif choice == "Players" and current_page != "Players":
         st.switch_page(home_page)
     elif choice == "Compare" and current_page != "Compare":
         st.switch_page(compare_page)
@@ -415,6 +417,73 @@ def render_player_stats_table(
             "UAST Rating": st.column_config.ImageColumn(width="medium"),
             "Scoring Profile": st.column_config.ImageColumn(width="medium"),
         },
+    )
+
+
+def render_landing(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
+    render_top_nav("Home")
+
+    seasons_by_year = (
+        df[["season_end_year", "season"]]
+        .drop_duplicates()
+        .sort_values("season_end_year", ascending=False)
+    )
+    season_choice = st.selectbox(
+        "Season", ["All Seasons"] + seasons_by_year["season"].tolist(), key="landing_season_choice"
+    )
+
+    if season_choice == "All Seasons":
+        filtered_players_df = df
+        filtered_teams_df = team_profile_df
+    else:
+        filtered_players_df = df[df["season"] == season_choice]
+        filtered_teams_df = team_profile_df[team_profile_df["season"] == season_choice]
+
+    qualified_players_df = filtered_players_df[filtered_players_df["qualified"]]
+    show_season_in_top = season_choice == "All Seasons"
+    leaders_label = "All-Time" if season_choice == "All Seasons" else season_choice
+
+    st.subheader(f"Top 5 Players — {leaders_label} (qualified players)")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**Scoring+**")
+        render_leaderboard(qualified_players_df, "scoring_plus", show_season_in_top)
+    with col2:
+        st.markdown("**Pts+**")
+        render_leaderboard(qualified_players_df, "pts_plus", show_season_in_top)
+    with col3:
+        st.markdown("**TS+**")
+        render_leaderboard(qualified_players_df, "ts_plus", show_season_in_top)
+
+    st.divider()
+
+    st.subheader(f"Top 5 Teams — {leaders_label}")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**oRating+**")
+        render_leaderboard(
+            filtered_teams_df, "team_orating_plus", show_season_in_top,
+            name_col="team_name", empty_message="No teams found.",
+        )
+    with col2:
+        st.markdown("**TS+**")
+        render_leaderboard(
+            filtered_teams_df, "team_ts_plus", show_season_in_top,
+            name_col="team_name", empty_message="No teams found.",
+        )
+    with col3:
+        st.markdown("**Possession+**")
+        render_leaderboard(
+            filtered_teams_df, "team_possession_plus", show_season_in_top,
+            name_col="team_name", empty_message="No teams found.",
+        )
+
+    st.divider()
+
+    st.subheader("About")
+    st.write(
+        "This is placeholder text for the About section. Add a description of the "
+        "project, data sources, and methodology here."
     )
 
 
@@ -2011,7 +2080,10 @@ df = load_player_profile()
 team_profile_df = load_team_profile()
 team_colors_df = load_team_colors()
 
-home_page = st.Page(lambda: render_home(df), title="Players", url_path="home", default=True)
+landing_page = st.Page(
+    lambda: render_landing(df, team_profile_df), title="Home", url_path="landing", default=True
+)
+home_page = st.Page(lambda: render_home(df), title="Players", url_path="home")
 compare_page = st.Page(
     lambda: render_compare(df, team_profile_df, team_colors_df), title="Compare", url_path="compare"
 )
@@ -2027,5 +2099,6 @@ customized_analysis_page = st.Page(
 )
 
 st.navigation(
-    [home_page, teams_page, team_breakdown_page, compare_page, customized_analysis_page], position="hidden"
+    [landing_page, home_page, teams_page, team_breakdown_page, compare_page, customized_analysis_page],
+    position="hidden",
 ).run()
