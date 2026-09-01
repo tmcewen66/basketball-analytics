@@ -18,6 +18,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 DB_PATH = "nba_stats.db"
+METHODOLOGY_PATH = "scoring_plus_methodolgy.md"
 
 st.set_page_config(page_title="NBA Scoring+ Explorer", layout="wide")
 
@@ -503,11 +504,8 @@ def render_landing(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
 def render_about() -> None:
     render_top_nav("About")
 
-    st.subheader("About")
-    st.write(
-        "This is placeholder text for the About section. Add a description of the "
-        "project, data sources, and methodology here."
-    )
+    with open(METHODOLOGY_PATH, encoding="utf-8") as f:
+        st.markdown(f.read())
 
 
 # --- Players page ---------------------------------------------------------------
