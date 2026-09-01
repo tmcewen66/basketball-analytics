@@ -334,13 +334,15 @@ def render_top_nav(current_page: str) -> None:
     )
     choice = st.pills(
         "Navigation",
-        ["Home", "Players", "Teams", "Team Breakdown", "Compare", "Customized Analysis"],
+        ["Home", "About", "Players", "Teams", "Team Breakdown", "Compare", "Customized Analysis"],
         default=current_page,
         key="top_nav_pills",
         label_visibility="collapsed",
     )
     if choice == "Home" and current_page != "Home":
         st.switch_page(landing_page)
+    elif choice == "About" and current_page != "About":
+        st.switch_page(about_page)
     elif choice == "Players" and current_page != "Players":
         st.switch_page(home_page)
     elif choice == "Compare" and current_page != "Compare":
@@ -491,7 +493,9 @@ def render_landing(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
             name_col="team_name", empty_message="No teams found.",
         )
 
-    st.divider()
+
+def render_about() -> None:
+    render_top_nav("About")
 
     st.subheader("About")
     st.write(
@@ -2099,6 +2103,7 @@ team_colors_df = load_team_colors()
 landing_page = st.Page(
     lambda: render_landing(df, team_profile_df), title="Home", url_path="landing", default=True
 )
+about_page = st.Page(render_about, title="About", url_path="about")
 home_page = st.Page(lambda: render_home(df), title="Players", url_path="home")
 compare_page = st.Page(
     lambda: render_compare(df, team_profile_df, team_colors_df), title="Compare", url_path="compare"
@@ -2115,6 +2120,9 @@ customized_analysis_page = st.Page(
 )
 
 st.navigation(
-    [landing_page, home_page, teams_page, team_breakdown_page, compare_page, customized_analysis_page],
+    [
+        landing_page, about_page, home_page, teams_page, team_breakdown_page, compare_page,
+        customized_analysis_page,
+    ],
     position="hidden",
 ).run()
