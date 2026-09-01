@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 DB_PATH = "nba_stats.db"
-METHODOLOGY_PATH = "scoring_plus_methodolgy.md"
+METHODOLOGY_PATH = "scoring_plus_methodology.md"
 
 st.set_page_config(page_title="NBA Scoring+ Explorer", layout="wide")
 
