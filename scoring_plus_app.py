@@ -435,6 +435,9 @@ def render_player_stats_table(
     )
 
 
+# --- Home page ----------------------------------------------------------------
+
+
 def render_landing(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
     render_top_nav("Home")
 
@@ -494,6 +497,9 @@ def render_landing(df: pd.DataFrame, team_profile_df: pd.DataFrame) -> None:
         )
 
 
+# --- About page ---------------------------------------------------------------
+
+
 def render_about() -> None:
     render_top_nav("About")
 
@@ -502,6 +508,9 @@ def render_about() -> None:
         "This is placeholder text for the About section. Add a description of the "
         "project, data sources, and methodology here."
     )
+
+
+# --- Players page ---------------------------------------------------------------
 
 
 def render_home(df: pd.DataFrame) -> None:
