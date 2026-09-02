@@ -369,6 +369,7 @@ def render_player_stats_table(
     show_age_gp_mpg: bool = False,
     show_player_name: bool = True,
     show_shooting_pcts: bool = False,
+    show_ows_obpm: bool = False,
 ) -> None:
     if show_team_season:
         lead_cols = ["team_abbreviation", "season"]
@@ -390,10 +391,13 @@ def render_player_stats_table(
     shooting_cols = ["fg_percentage", "three_point_percentage", "ft_percentage"] if show_shooting_pcts else []
     shooting_labels = ["FG%", "3P%", "FT%"] if show_shooting_pcts else []
 
+    ows_obpm_cols = ["offensive_win_shares", "offensive_box_plus_minus"] if show_ows_obpm else []
+    ows_obpm_labels = ["OWS", "OBPM"] if show_ows_obpm else []
+
     table_df = table_source[[
         *name_cols, *lead_cols, "scoring_plus", "pts_plus", "ts_plus",
-        "points_per_game", "per_100_pts", *shooting_cols, "true_shooting_percentage", "pct_uast_fgm",
-        "uast_rating", "profile",
+        "points_per_game", "per_100_pts", *shooting_cols, "true_shooting_percentage", *ows_obpm_cols,
+        "pct_uast_fgm", "uast_rating", "profile",
     ]].rename(columns={
         "player_name": "Player",
         **lead_rename,
@@ -406,6 +410,8 @@ def render_player_stats_table(
         "three_point_percentage": "3P%",
         "ft_percentage": "FT%",
         "true_shooting_percentage": "TS%",
+        "offensive_win_shares": "OWS",
+        "offensive_box_plus_minus": "OBPM",
         "pct_uast_fgm": "FGM% UAST",
         "profile": "Scoring Profile",
     })
@@ -416,7 +422,7 @@ def render_player_stats_table(
     ]
     table_df = table_df[[
         *name_labels, *lead_labels, "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", *shooting_labels,
-        "TS%", "FGM% UAST", "UAST Rating", "Scoring Profile",
+        "TS%", *ows_obpm_labels, "FGM% UAST", "UAST Rating", "Scoring Profile",
     ]]
     if sort_by_season:
         table_df = table_df.sort_values("Season", ascending=True).reset_index(drop=True)
@@ -438,6 +444,8 @@ def render_player_stats_table(
             "3P%": "{:.3f}",
             "FT%": "{:.3f}",
             "TS%": "{:.3f}",
+            "OWS": "{:.1f}",
+            "OBPM": "{:.1f}",
             "FGM% UAST": "{:.3f}",
         })
         .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
@@ -461,6 +469,8 @@ def render_player_stats_table(
             "3P%": st.column_config.NumberColumn(format="%.3f", width="small"),
             "FT%": st.column_config.NumberColumn(format="%.3f", width="small"),
             "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "OWS": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "OBPM": st.column_config.NumberColumn(format="%.1f", width="small"),
             "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
             "UAST Rating": st.column_config.ImageColumn(width="medium"),
             "Scoring Profile": st.column_config.ImageColumn(width="medium"),
@@ -934,7 +944,7 @@ def render_player_breakdown(df: pd.DataFrame) -> None:
 
     render_player_stats_table(
         player_df, sort_by_season=True, show_age_gp_mpg=True, show_player_name=False,
-        show_shooting_pcts=True,
+        show_shooting_pcts=True, show_ows_obpm=True,
     )
 
 

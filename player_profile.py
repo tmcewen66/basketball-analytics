@@ -13,7 +13,9 @@ import pandas as pd
 DB_PATH = "nba_stats.db"
 
 
-def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_tables(
+    db_path: str = DB_PATH,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     with sqlite3.connect(db_path) as con:
         scoring_plus = pd.read_sql(
             "SELECT slug, season_end_year, name, per_100_pts, true_shooting_percentage, "
@@ -37,11 +39,19 @@ def load_tables(db_path: str = DB_PATH) -> tuple[pd.DataFrame, pd.DataFrame, pd.
             "FROM scoring_profile",
             con,
         )
-    return scoring_plus, derived, per_100, scoring_profile
+        advanced = pd.read_sql(
+            "SELECT slug, season_end_year, offensive_win_shares, offensive_box_plus_minus FROM advanced_stats",
+            con,
+        )
+    return scoring_plus, derived, per_100, scoring_profile, advanced
 
 
 def compute_player_profile(
-    scoring_plus: pd.DataFrame, derived: pd.DataFrame, per_100: pd.DataFrame, scoring_profile: pd.DataFrame
+    scoring_plus: pd.DataFrame,
+    derived: pd.DataFrame,
+    per_100: pd.DataFrame,
+    scoring_profile: pd.DataFrame,
+    advanced: pd.DataFrame,
 ) -> pd.DataFrame:
     df = scoring_plus.merge(derived, on=["slug", "season_end_year"])
     df = df.merge(per_100, on=["slug", "season_end_year"])
@@ -50,12 +60,14 @@ def compute_player_profile(
         on=["slug", "season_end_year"],
         how="left",
     )
+    df = df.merge(advanced, on=["slug", "season_end_year"], how="left")
     df = df.rename(columns={"name": "player_name", "team": "team_name"})
     df["season"] = (df["season_end_year"] - 1).astype(str) + "-" + df["season_end_year"].astype(str) # type: ignore
 
     return df[[
         "player_name", "team_name", "team_abbreviation", "team_id", "season_end_year", "season", "slug", "player_id", "games_played",
         "minutes_per_game", "minutes_played", "scoring_plus", "pts_plus", "ts_plus", "per_100_pts", "true_shooting_percentage",
+        "offensive_win_shares", "offensive_box_plus_minus",
         "age", "positions", "points_per_game", "fg_percentage", "three_point_percentage", "ft_percentage",
         "assists_per_game", "offensive_rebounds_per_game", "defensive_rebounds_per_game",
         "total_rebounds_per_game", "turnovers_per_game", "steals_per_game", "blocks_per_game", "stocks_per_game",
@@ -75,7 +87,7 @@ def save_to_sqlite(df: pd.DataFrame, db_path: str = DB_PATH) -> None:
 
 
 if __name__ == "__main__":
-    scoring_plus, derived, per_100, scoring_profile = load_tables()
-    player_profile_df = compute_player_profile(scoring_plus, derived, per_100, scoring_profile)
+    scoring_plus, derived, per_100, scoring_profile, advanced = load_tables()
+    player_profile_df = compute_player_profile(scoring_plus, derived, per_100, scoring_profile, advanced)
     save_to_sqlite(player_profile_df)
     print(player_profile_df.head())
