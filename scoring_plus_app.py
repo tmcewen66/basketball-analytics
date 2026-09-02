@@ -367,6 +367,8 @@ def render_player_stats_table(
     sort_by_season: bool = False,
     show_team_season: bool = True,
     show_age_gp_mpg: bool = False,
+    show_player_name: bool = True,
+    show_shooting_pcts: bool = False,
 ) -> None:
     if show_team_season:
         lead_cols = ["team_abbreviation", "season"]
@@ -382,9 +384,15 @@ def render_player_stats_table(
         lead_rename = {**lead_rename, "age": "Age", "games_played": "GP", "minutes_per_game": "MPG"}
         lead_labels = [*lead_labels, "Age", "GP", "MPG"]
 
+    name_cols = ["player_name"] if show_player_name else []
+    name_labels = ["Player"] if show_player_name else []
+
+    shooting_cols = ["fg_percentage", "three_point_percentage", "ft_percentage"] if show_shooting_pcts else []
+    shooting_labels = ["FG%", "3P%", "FT%"] if show_shooting_pcts else []
+
     table_df = table_source[[
-        "player_name", *lead_cols, "scoring_plus", "pts_plus", "ts_plus",
-        "points_per_game", "per_100_pts", "true_shooting_percentage", "pct_uast_fgm",
+        *name_cols, *lead_cols, "scoring_plus", "pts_plus", "ts_plus",
+        "points_per_game", "per_100_pts", *shooting_cols, "true_shooting_percentage", "pct_uast_fgm",
         "uast_rating", "profile",
     ]].rename(columns={
         "player_name": "Player",
@@ -394,6 +402,9 @@ def render_player_stats_table(
         "ts_plus": "TS+",
         "points_per_game": "PPG",
         "per_100_pts": "PTS per 100",
+        "fg_percentage": "FG%",
+        "three_point_percentage": "3P%",
+        "ft_percentage": "FT%",
         "true_shooting_percentage": "TS%",
         "pct_uast_fgm": "FGM% UAST",
         "profile": "Scoring Profile",
@@ -404,8 +415,8 @@ def render_player_stats_table(
         for profile, rating in zip(table_df["Scoring Profile"], table_df["uast_rating"])
     ]
     table_df = table_df[[
-        "Player", *lead_labels, "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", "TS%",
-        "FGM% UAST", "UAST Rating", "Scoring Profile",
+        *name_labels, *lead_labels, "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", *shooting_labels,
+        "TS%", "FGM% UAST", "UAST Rating", "Scoring Profile",
     ]]
     if sort_by_season:
         table_df = table_df.sort_values("Season", ascending=True).reset_index(drop=True)
@@ -423,6 +434,9 @@ def render_player_stats_table(
             "TS+": "{:.0f}",
             "PPG": "{:.1f}",
             "PTS per 100": "{:.1f}",
+            "FG%": "{:.3f}",
+            "3P%": "{:.3f}",
+            "FT%": "{:.3f}",
             "TS%": "{:.3f}",
             "FGM% UAST": "{:.3f}",
         })
@@ -443,6 +457,9 @@ def render_player_stats_table(
             "TS+": st.column_config.NumberColumn(format="%d", width="small"),
             "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
             "PTS per 100": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "FG%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "3P%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "FT%": st.column_config.NumberColumn(format="%.3f", width="small"),
             "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
             "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
             "UAST Rating": st.column_config.ImageColumn(width="medium"),
@@ -915,7 +932,10 @@ def render_player_breakdown(df: pd.DataFrame) -> None:
 
     st.divider()
 
-    render_player_stats_table(player_df, sort_by_season=True, show_age_gp_mpg=True)
+    render_player_stats_table(
+        player_df, sort_by_season=True, show_age_gp_mpg=True, show_player_name=False,
+        show_shooting_pcts=True,
+    )
 
 
 # --- Compare page -----------------------------------------------------------
