@@ -314,25 +314,6 @@ def render_plain_metric(label: str, value: str) -> str:
     )
 
 
-def render_plus_metric(label: str, raw_value: float) -> str:
-    """Like render_plain_metric, but colors the value green/red around the
-    league-average 100 baseline, matching color_plus_metric's threshold."""
-    if pd.isna(raw_value):
-        return render_plain_metric(label, "N/A")
-    color = "#1a7a3c" if raw_value >= 100 else "#c0392b"
-    return (
-        "<div style='text-align:center;'>"
-        f"<div style='font-size:0.875rem; opacity:0.7;'>{html.escape(label)}</div>"
-        f"<div style='font-size:2rem; font-weight:600; line-height:1.25; color:{color};'>"
-        f"{raw_value:.0f}</div>"
-        "</div>"
-    )
-
-
-def fmt_or_na(value, fmt: str) -> str:
-    return "N/A" if pd.isna(value) else format(value, fmt)
-
-
 def render_colored_subheader(text: str, color: str | None, container=None) -> None:
     """Like st.subheader, but in `color` when one is given (matches st.subheader's
     own font-size/weight so it doesn't move when a team color is available)."""
@@ -828,6 +809,7 @@ def render_home(df: pd.DataFrame) -> None:
 
 def render_career_table(career: pd.Series) -> None:
     table_df = pd.DataFrame([{
+        "MPG": career["minutes_per_game"],
         "Scoring+": career["scoring_plus"],
         "PTS+": career["pts_plus"],
         "TS+": career["ts_plus"],
@@ -844,6 +826,7 @@ def render_career_table(career: pd.Series) -> None:
     styled_table_df = (
         table_df.style
         .format({
+            "MPG": "{:.1f}",
             "Scoring+": "{:.0f}",
             "PTS+": "{:.0f}",
             "TS+": "{:.0f}",
@@ -864,6 +847,7 @@ def render_career_table(career: pd.Series) -> None:
         use_container_width=True,
         hide_index=True,
         column_config={
+            "MPG": st.column_config.NumberColumn(format="%.1f", width="small"),
             "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
             "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
             "TS+": st.column_config.NumberColumn(format="%d", width="small"),
@@ -895,55 +879,9 @@ def render_player_breakdown(df: pd.DataFrame, career_averages_df: pd.DataFrame) 
     career_row = career_averages_df[career_averages_df["slug"] == player_df["slug"].iloc[0]]
     career = career_row.iloc[0] if not career_row.empty else None
 
-    career_title_col, career_style_col = st.columns([3, 1])
-    career_title_col.subheader("Career")
-    career_style = career_style_col.radio(
-        "Career display style",
-        ["Boxes", "Table"],
-        key="player_breakdown_career_style",
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-    if career is not None and career_style == "Table":
+    st.subheader("Career")
+    if career is not None:
         render_career_table(career)
-    elif career is not None:
-        plus_col1, plus_col2, plus_col3 = st.columns(3)
-        plus_col1.markdown(render_plus_metric("Scoring+", career["scoring_plus"]), unsafe_allow_html=True)
-        plus_col2.markdown(render_plus_metric("PTS+", career["pts_plus"]), unsafe_allow_html=True)
-        plus_col3.markdown(render_plus_metric("TS+", career["ts_plus"]), unsafe_allow_html=True)
-
-        ppg_col, fg_col, tp_col, ft_col, ts_col = st.columns(5)
-        ppg_col.markdown(
-            render_plain_metric("PPG", fmt_or_na(career["points_per_game"], ".1f")), unsafe_allow_html=True
-        )
-        fg_col.markdown(
-            render_plain_metric("FG%", fmt_or_na(career["fg_percentage"], ".3f")), unsafe_allow_html=True
-        )
-        tp_col.markdown(
-            render_plain_metric("3P%", fmt_or_na(career["three_point_percentage"], ".3f")),
-            unsafe_allow_html=True,
-        )
-        ft_col.markdown(
-            render_plain_metric("FT%", fmt_or_na(career["ft_percentage"], ".3f")), unsafe_allow_html=True
-        )
-        ts_col.markdown(
-            render_plain_metric("TS%", fmt_or_na(career["true_shooting_percentage"], ".3f")),
-            unsafe_allow_html=True,
-        )
-
-        ows_col, obpm_col, uast_col = st.columns(3)
-        ows_col.markdown(
-            render_plain_metric("OWS", fmt_or_na(career["offensive_win_shares"], ".1f")),
-            unsafe_allow_html=True,
-        )
-        obpm_col.markdown(
-            render_plain_metric("OBPM", fmt_or_na(career["offensive_box_plus_minus"], ".1f")),
-            unsafe_allow_html=True,
-        )
-        uast_col.markdown(
-            render_plain_metric("FGM% UAST", fmt_or_na(career["pct_uast_fgm"], ".3f")),
-            unsafe_allow_html=True,
-        )
     else:
         st.caption("Career averages unavailable.")
 
