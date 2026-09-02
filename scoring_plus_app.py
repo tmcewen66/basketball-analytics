@@ -787,6 +787,34 @@ def render_player_breakdown(df: pd.DataFrame) -> None:
 
     render_colored_subheader(player_name, None)
 
+    trend_title_col, trend_dropdown_col = st.columns([3, 1])
+    trend_metric_cols = {"Scoring+": "scoring_plus", "PTS+": "pts_plus", "TS+": "ts_plus"}
+    trend_choice = trend_dropdown_col.selectbox(
+        "Trend metric",
+        list(trend_metric_cols.keys()),
+        key="player_breakdown_trend_choice",
+        label_visibility="collapsed",
+    )
+    trend_title_col.subheader(f"{trend_choice} by Season")
+
+    trend_col = trend_metric_cols[trend_choice]
+    trend_fig = go.Figure()
+    trend_fig.add_hline(y=100, line_dash="dash", line_color="#898781")
+    trend_fig.add_trace(go.Scatter(
+        x=player_df["season_end_year"],
+        y=player_df[trend_col],
+        mode="lines+markers",
+        line=dict(shape="spline", color="#2a78d6"),
+        marker=dict(size=8, color="#2a78d6"),
+        customdata=player_df[["season"]],
+        hovertemplate=f"<b>%{{customdata[0]}}</b><br>{trend_choice}: " + "%{y:.0f}<extra></extra>",
+    ))
+    trend_fig.update_xaxes(title="Season", tickmode="linear", dtick=1, tickformat="d")
+    trend_fig.update_yaxes(title=trend_choice)
+    st.plotly_chart(trend_fig, use_container_width=True, key="player_breakdown_trend_chart")
+
+    st.divider()
+
     title_col, dropdown_col = st.columns([3, 1])
     plot_choice = dropdown_col.selectbox(
         "Scatter plot",
