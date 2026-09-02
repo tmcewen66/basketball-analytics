@@ -795,7 +795,7 @@ def render_player_breakdown(df: pd.DataFrame) -> None:
         key="player_breakdown_trend_choice",
         label_visibility="collapsed",
     )
-    trend_title_col.subheader(f"{trend_choice} by Season")
+    trend_title_col.subheader(f"{trend_choice} Career Arc")
 
     trend_col = trend_metric_cols[trend_choice]
     trend_fig = go.Figure()
