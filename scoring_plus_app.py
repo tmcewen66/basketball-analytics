@@ -48,6 +48,12 @@ def load_team_colors(db_path: str = DB_PATH) -> pd.DataFrame:
         )
 
 
+@st.cache_data
+def load_career_averages(db_path: str = DB_PATH) -> pd.DataFrame:
+    with sqlite3.connect(db_path) as con:
+        return pd.read_sql("SELECT * FROM career_averages", con)
+
+
 def uast_color(rating: float) -> str:
     """Maps a uast_rating to its Finisher/Balanced/Creator color: blue/gray/orange."""
     if rating <= -2:
@@ -306,6 +312,25 @@ def render_plain_metric(label: str, value: str) -> str:
         f"<div style='font-size:2rem; font-weight:600; line-height:1.25;'>{value}</div>"
         "</div>"
     )
+
+
+def render_plus_metric(label: str, raw_value: float) -> str:
+    """Like render_plain_metric, but colors the value green/red around the
+    league-average 100 baseline, matching color_plus_metric's threshold."""
+    if pd.isna(raw_value):
+        return render_plain_metric(label, "N/A")
+    color = "#1a7a3c" if raw_value >= 100 else "#c0392b"
+    return (
+        "<div style='text-align:center;'>"
+        f"<div style='font-size:0.875rem; opacity:0.7;'>{html.escape(label)}</div>"
+        f"<div style='font-size:2rem; font-weight:600; line-height:1.25; color:{color};'>"
+        f"{raw_value:.0f}</div>"
+        "</div>"
+    )
+
+
+def fmt_or_na(value, fmt: str) -> str:
+    return "N/A" if pd.isna(value) else format(value, fmt)
 
 
 def render_colored_subheader(text: str, color: str | None, container=None) -> None:
@@ -801,7 +826,7 @@ def render_home(df: pd.DataFrame) -> None:
 # --- Player Breakdown page ------------------------------------------------------
 
 
-def render_player_breakdown(df: pd.DataFrame) -> None:
+def render_player_breakdown(df: pd.DataFrame, career_averages_df: pd.DataFrame) -> None:
     render_top_nav("Player Breakdown")
 
     player_id = player_search_widget(df, "player_breakdown", "Search player name")
@@ -813,6 +838,53 @@ def render_player_breakdown(df: pd.DataFrame) -> None:
     player_name = player_df["player_name"].iloc[0]
 
     render_colored_subheader(player_name, None)
+
+    career_row = career_averages_df[career_averages_df["slug"] == player_df["slug"].iloc[0]]
+    career = career_row.iloc[0] if not career_row.empty else None
+
+    st.subheader("Career")
+    if career is not None:
+        plus_col1, plus_col2, plus_col3 = st.columns(3)
+        plus_col1.markdown(render_plus_metric("Scoring+", career["scoring_plus"]), unsafe_allow_html=True)
+        plus_col2.markdown(render_plus_metric("PTS+", career["pts_plus"]), unsafe_allow_html=True)
+        plus_col3.markdown(render_plus_metric("TS+", career["ts_plus"]), unsafe_allow_html=True)
+
+        ppg_col, fg_col, tp_col, ft_col, ts_col = st.columns(5)
+        ppg_col.markdown(
+            render_plain_metric("PPG", fmt_or_na(career["points_per_game"], ".1f")), unsafe_allow_html=True
+        )
+        fg_col.markdown(
+            render_plain_metric("FG%", fmt_or_na(career["fg_percentage"], ".3f")), unsafe_allow_html=True
+        )
+        tp_col.markdown(
+            render_plain_metric("3P%", fmt_or_na(career["three_point_percentage"], ".3f")),
+            unsafe_allow_html=True,
+        )
+        ft_col.markdown(
+            render_plain_metric("FT%", fmt_or_na(career["ft_percentage"], ".3f")), unsafe_allow_html=True
+        )
+        ts_col.markdown(
+            render_plain_metric("TS%", fmt_or_na(career["true_shooting_percentage"], ".3f")),
+            unsafe_allow_html=True,
+        )
+
+        ows_col, obpm_col, uast_col = st.columns(3)
+        ows_col.markdown(
+            render_plain_metric("OWS", fmt_or_na(career["offensive_win_shares"], ".1f")),
+            unsafe_allow_html=True,
+        )
+        obpm_col.markdown(
+            render_plain_metric("OBPM", fmt_or_na(career["offensive_box_plus_minus"], ".1f")),
+            unsafe_allow_html=True,
+        )
+        uast_col.markdown(
+            render_plain_metric("FGM% UAST", fmt_or_na(career["pct_uast_fgm"], ".3f")),
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption("Career averages unavailable.")
+
+    st.divider()
 
     trend_title_col, trend_dropdown_col = st.columns([3, 1])
     trend_metric_cols = {"Scoring+": "scoring_plus", "PTS+": "pts_plus", "TS+": "ts_plus"}
@@ -2298,6 +2370,7 @@ def render_customized_analysis(df: pd.DataFrame, team_profile_df: pd.DataFrame) 
 df = load_player_profile()
 team_profile_df = load_team_profile()
 team_colors_df = load_team_colors()
+career_averages_df = load_career_averages()
 
 landing_page = st.Page(
     lambda: render_landing(df, team_profile_df), title="Home", url_path="landing", default=True
@@ -2305,7 +2378,8 @@ landing_page = st.Page(
 about_page = st.Page(render_about, title="About", url_path="about")
 home_page = st.Page(lambda: render_home(df), title="Players", url_path="home")
 player_breakdown_page = st.Page(
-    lambda: render_player_breakdown(df), title="Player Breakdown", url_path="player-breakdown"
+    lambda: render_player_breakdown(df, career_averages_df),
+    title="Player Breakdown", url_path="player-breakdown",
 )
 compare_page = st.Page(
     lambda: render_compare(df, team_profile_df, team_colors_df), title="Compare", url_path="compare"
