@@ -826,6 +826,59 @@ def render_home(df: pd.DataFrame) -> None:
 # --- Player Breakdown page ------------------------------------------------------
 
 
+def render_career_table(career: pd.Series) -> None:
+    table_df = pd.DataFrame([{
+        "Scoring+": career["scoring_plus"],
+        "PTS+": career["pts_plus"],
+        "TS+": career["ts_plus"],
+        "PPG": career["points_per_game"],
+        "FG%": career["fg_percentage"],
+        "3P%": career["three_point_percentage"],
+        "FT%": career["ft_percentage"],
+        "TS%": career["true_shooting_percentage"],
+        "OWS": career["offensive_win_shares"],
+        "OBPM": career["offensive_box_plus_minus"],
+        "FGM% UAST": career["pct_uast_fgm"],
+    }])
+
+    styled_table_df = (
+        table_df.style
+        .format({
+            "Scoring+": "{:.0f}",
+            "PTS+": "{:.0f}",
+            "TS+": "{:.0f}",
+            "PPG": "{:.1f}",
+            "FG%": "{:.3f}",
+            "3P%": "{:.3f}",
+            "FT%": "{:.3f}",
+            "TS%": "{:.3f}",
+            "OWS": "{:.1f}",
+            "OBPM": "{:.1f}",
+            "FGM% UAST": "{:.3f}",
+        })
+        .map(color_plus_metric, subset=["Scoring+", "PTS+", "TS+"])
+    )
+
+    st.dataframe(
+        styled_table_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Scoring+": st.column_config.NumberColumn(format="%d", width="small"),
+            "PTS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "TS+": st.column_config.NumberColumn(format="%d", width="small"),
+            "PPG": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "FG%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "3P%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "FT%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "TS%": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "OWS": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "OBPM": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "FGM% UAST": st.column_config.NumberColumn(format="%.3f", width="small"),
+        },
+    )
+
+
 def render_player_breakdown(df: pd.DataFrame, career_averages_df: pd.DataFrame) -> None:
     render_top_nav("Player Breakdown")
 
@@ -842,8 +895,18 @@ def render_player_breakdown(df: pd.DataFrame, career_averages_df: pd.DataFrame) 
     career_row = career_averages_df[career_averages_df["slug"] == player_df["slug"].iloc[0]]
     career = career_row.iloc[0] if not career_row.empty else None
 
-    st.subheader("Career")
-    if career is not None:
+    career_title_col, career_style_col = st.columns([3, 1])
+    career_title_col.subheader("Career")
+    career_style = career_style_col.radio(
+        "Career display style",
+        ["Boxes", "Table"],
+        key="player_breakdown_career_style",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    if career is not None and career_style == "Table":
+        render_career_table(career)
+    elif career is not None:
         plus_col1, plus_col2, plus_col3 = st.columns(3)
         plus_col1.markdown(render_plus_metric("Scoring+", career["scoring_plus"]), unsafe_allow_html=True)
         plus_col2.markdown(render_plus_metric("PTS+", career["pts_plus"]), unsafe_allow_html=True)
