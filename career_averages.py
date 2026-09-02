@@ -10,6 +10,14 @@ weighted by each season's made field goals (from scoring_profile), and
 Scoring+/TS+/PTS+ are weighted by each season's minutes played (from
 scoring_plus), so a 3000-minute season outweighs a 1500-minute one. OWS and
 OBPM (from advanced_stats) are summed across the career rather than averaged.
+
+Career per_100_pts (from per_100_stats) is weighted by each season's
+possessions. Season possessions are backed out from total points and the
+per-100 scoring rate (possessions = 100 * points / per_100_pts); seasons with
+no per-100 rate (per_100_pts == 0) fall back to an estimate from that season's
+league-average pace, (pace / 48) * minutes_played (pace from
+nba_advanced_averages). Possessions are rounded to the nearest whole number
+before weighting, matching career_averages_work.ipynb.
 """
 
 import sqlite3
@@ -22,7 +30,9 @@ DB_PATH = "nba_stats.db"
 
 def load_tables(
     db_path: str = DB_PATH,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[
+    pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame
+]:
     with sqlite3.connect(db_path) as con:
         basic_stats = pd.read_sql(
             "SELECT slug, season_end_year, name, games_played, minutes_played, points, assists, "
@@ -41,7 +51,20 @@ def load_tables(
         advanced_stats = pd.read_sql(
             "SELECT slug, offensive_win_shares, offensive_box_plus_minus FROM advanced_stats", con
         )
-    return basic_stats, scoring_profile, scoring_plus, advanced_stats
+        per_100_stats = pd.read_sql(
+            "SELECT slug, season_end_year, per_100_pts FROM per_100_stats", con
+        )
+        nba_advanced_averages = pd.read_sql(
+            "SELECT season_end_year, pace FROM nba_advanced_averages", con
+        )
+    return (
+        basic_stats,
+        scoring_profile,
+        scoring_plus,
+        advanced_stats,
+        per_100_stats,
+        nba_advanced_averages,
+    )
 
 
 def _weighted_average(df: pd.DataFrame, value_col: str, weight_col: str) -> pd.Series:
@@ -51,11 +74,48 @@ def _weighted_average(df: pd.DataFrame, value_col: str, weight_col: str) -> pd.S
     return (weighted_sum / weight_total.replace(0, np.nan)).rename(value_col)
 
 
+def _career_per_100_points(
+    basic_stats: pd.DataFrame,
+    per_100_stats: pd.DataFrame,
+    nba_advanced_averages: pd.DataFrame,
+) -> pd.Series:
+    """Per-slug career per_100_pts, weighted by each season's possessions.
+
+    Season possessions are backed out from total points and the per-100
+    scoring rate (possessions = 100 * points / per_100_pts). Seasons with no
+    per-100 rate (per_100_pts == 0) get an estimate from that season's
+    league-average pace: (pace / 48) * minutes_played. Possessions are then
+    rounded to the nearest whole number before being used as weights, matching
+    the logic in career_averages_work.ipynb.
+    """
+    per_100_stats = per_100_stats.dropna(subset=["slug"]).drop_duplicates(
+        ["slug", "season_end_year"]
+    )
+    pace_by_season = nba_advanced_averages.drop_duplicates("season_end_year")
+
+    seasons = basic_stats[
+        ["slug", "season_end_year", "points", "minutes_played"]
+    ].merge(per_100_stats, on=["slug", "season_end_year"], how="inner")
+    seasons = seasons.merge(pace_by_season, on="season_end_year", how="left")
+
+    possessions = (100 * seasons["points"]) / seasons["per_100_pts"].replace(0, np.nan)
+    estimated_possessions = (seasons["pace"] / 48) * seasons["minutes_played"]
+    seasons["possessions"] = (
+        possessions.fillna(estimated_possessions).round(0).astype(int)
+    )
+
+    return _weighted_average(seasons, "per_100_pts", "possessions").rename(
+        "per_100_points"
+    )
+
+
 def compute_career_averages(
     basic_stats: pd.DataFrame,
     scoring_profile: pd.DataFrame,
     scoring_plus: pd.DataFrame,
     advanced_stats: pd.DataFrame,
+    per_100_stats: pd.DataFrame,
+    nba_advanced_averages: pd.DataFrame,
 ) -> pd.DataFrame:
     basic_stats = basic_stats.sort_values(["slug", "season_end_year"]).copy()
     basic_stats["total_rebounds"] = basic_stats["offensive_rebounds"] + basic_stats["defensive_rebounds"]
@@ -114,12 +174,16 @@ def compute_career_averages(
     scoring_plus_weighted = _weighted_average(scoring_plus, "scoring_plus", "minutes_played")
     ts_plus_weighted = _weighted_average(scoring_plus, "ts_plus", "minutes_played")
     pts_plus_weighted = _weighted_average(scoring_plus, "pts_plus", "minutes_played")
+    per_100_points_weighted = _career_per_100_points(
+        basic_stats, per_100_stats, nba_advanced_averages
+    )
     ows_obpm_totals = advanced_stats.groupby("slug")[
         ["offensive_win_shares", "offensive_box_plus_minus"]
     ].sum()
 
     df = totals.join([
-        uast_weighted, scoring_plus_weighted, ts_plus_weighted, pts_plus_weighted, ows_obpm_totals,
+        uast_weighted, scoring_plus_weighted, ts_plus_weighted, pts_plus_weighted,
+        per_100_points_weighted, ows_obpm_totals,
     ])
     df = df.reset_index()
 
@@ -130,7 +194,7 @@ def compute_career_averages(
         "fgm_per_game", "fga_per_game", "three_pm_per_game", "three_pa_per_game",
         "ftm_per_game", "fta_per_game",
         "fg_percentage", "three_point_percentage", "ft_percentage", "true_shooting_percentage",
-        "pct_uast_fgm", "scoring_plus", "ts_plus", "pts_plus",
+        "pct_uast_fgm", "per_100_points", "scoring_plus", "ts_plus", "pts_plus",
         "offensive_win_shares", "offensive_box_plus_minus",
     ]]
 
@@ -145,7 +209,21 @@ def save_to_sqlite(df: pd.DataFrame, db_path: str = DB_PATH) -> None:
 
 
 if __name__ == "__main__":
-    basic_stats, scoring_profile, scoring_plus, advanced_stats = load_tables()
-    career_averages_df = compute_career_averages(basic_stats, scoring_profile, scoring_plus, advanced_stats)
+    (
+        basic_stats,
+        scoring_profile,
+        scoring_plus,
+        advanced_stats,
+        per_100_stats,
+        nba_advanced_averages,
+    ) = load_tables()
+    career_averages_df = compute_career_averages(
+        basic_stats,
+        scoring_profile,
+        scoring_plus,
+        advanced_stats,
+        per_100_stats,
+        nba_advanced_averages,
+    )
     save_to_sqlite(career_averages_df)
     print(career_averages_df.head())
