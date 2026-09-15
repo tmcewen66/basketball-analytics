@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Builds team_profile: the team-level analog of player_profile, used by the
 Streamlit app for team-related queries. Starts from team_scoring_plus and

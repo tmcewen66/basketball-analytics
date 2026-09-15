@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Scrapes the NBA league-average per-100-possession stats table from
 Basketball-Reference. The whole history lives on one page, so this fetches

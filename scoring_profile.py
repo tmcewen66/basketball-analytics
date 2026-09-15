@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Builds a scoring_profile table that classifies each player-season by how much
 of their scoring comes unassisted (pct_uast_fgm from scoring_splits), relative

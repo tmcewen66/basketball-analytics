@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Creates a new statistic that attempts to combine a player's volume of scoring
 (per-100-possessions points) with their efficiency (true shooting percentage)

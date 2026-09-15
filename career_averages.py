@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Builds a career_averages table: one row per unique player (keyed by the
 basketball-reference slug), summarizing their whole career in this dataset.

@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Loads teamcolors.csv into a DataFrame of team primary/secondary colors.
 """

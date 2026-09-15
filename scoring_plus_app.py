@@ -1,10 +1,10 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Streamlit app for exploring player_profile and team_profile: era-adjusted
 scoring metrics (scoring+, pts+, ts+) alongside traditional counting stats,
 filterable by season and scoring-title qualification.
 
-Run with: /opt/anaconda3/bin/streamlit run scoring_plus_app.py
+Run with: .conda/bin/streamlit run scoring_plus_app.py
 """
 
 import base64

@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Creates a team-level analog of scoring_plus: combines each team's offensive
 rating and true shooting percentage with the league average for that season

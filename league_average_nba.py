@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Computes league-average stats per season from the team_per_100_stats and
 team_advanced_stats tables (nbadatascraping.py) and saves them to new

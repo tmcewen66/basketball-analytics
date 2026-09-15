@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Builds a player_profile table that combines scoring_plus (era-adjusted
 scoring metrics), traditional per-game shooting splits from derived_stats,

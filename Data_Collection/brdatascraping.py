@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Fetches basic and advanced NBA player season totals from Basketball-Reference
 for all seasons from 2000-01 through 2025-26.

@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Computes derived advanced stats from the basic_stats and advanced_stats tables
 in nba_stats.db and writes them to a derived_stats table.

@@ -1,4 +1,4 @@
-#!/usr/bin/env /opt/anaconda3/bin/python3
+#!/usr/bin/env python3
 """
 Fetches per-100-possessions, scoring splits, and advanced stats for every
 NBA player and team from 2000-01 through 2025-26 using the nba_api package
