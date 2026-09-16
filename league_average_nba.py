@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Computes league-average stats per season from the team_per_100_stats and
-team_advanced_stats tables (nbadatascraping.py) and saves them to new
-nba_per_100_averages and nba_advanced_averages tables in nba_stats.db.
+Computes league-average stats per season from the team_per_100_stats,
+team_advanced_stats, and team_per_game_stats tables (nbadatascraping.py)
+and saves them to new nba_per_100_averages, nba_advanced_averages, and
+nba_per_game_averages tables in nba_stats.db.
 """
 
 import sqlite3
@@ -49,3 +50,7 @@ if __name__ == "__main__":
     advanced_averages_df = compute_league_averages(load_team_stats("team_advanced_stats"))
     save_to_sqlite(advanced_averages_df, "nba_advanced_averages")
     print(advanced_averages_df)
+
+    per_game_averages_df = compute_league_averages(load_team_stats("team_per_game_stats"))
+    save_to_sqlite(per_game_averages_df, "nba_per_game_averages")
+    print(per_game_averages_df)
