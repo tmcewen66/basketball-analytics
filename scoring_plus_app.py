@@ -368,6 +368,33 @@ def render_top_nav(current_page: str) -> None:
     st.divider()
 
 
+def render_sort_controls(
+    labels: list[str], default_label: str, key_prefix: str, default_ascending: bool = False
+) -> tuple[str, bool]:
+    """Renders "Sort by" + order selectboxes and returns (column label, ascending).
+
+    Streamlit's own header-click sorting happens in the browser and is never
+    reported back to Python, so the Rk column can only track a sort chosen here.
+    """
+    _, sort_col, order_col = st.columns([2, 1, 1])
+    sort_label = sort_col.selectbox(
+        "Sort by", labels, index=labels.index(default_label), key=f"{key_prefix}_sort_by"
+    )
+    order = order_col.selectbox(
+        "Order",
+        ["Descending", "Ascending"],
+        index=1 if default_ascending else 0,
+        key=f"{key_prefix}_sort_order",
+    )
+    return sort_label, order == "Ascending"
+
+
+def apply_rank_column(table_df: pd.DataFrame, sort_label: str, ascending: bool) -> pd.DataFrame:
+    table_df = table_df.sort_values(sort_label, ascending=ascending, kind="stable").reset_index(drop=True)
+    table_df.insert(0, "Rk", range(1, len(table_df) + 1))
+    return table_df
+
+
 def render_player_stats_table(
     table_source: pd.DataFrame,
     sort_by_season: bool = False,
@@ -376,6 +403,7 @@ def render_player_stats_table(
     show_player_name: bool = True,
     show_shooting_pcts: bool = False,
     show_ows_obpm: bool = False,
+    rank_key: str | None = None,
 ) -> None:
     if show_team_season:
         lead_cols = ["team_abbreviation", "season"]
@@ -430,14 +458,20 @@ def render_player_stats_table(
         *name_labels, *lead_labels, "Scoring+", "PTS+", "TS+", "PPG", "PTS per 100", *shooting_labels,
         "TS%", *ows_obpm_labels, "FGM% UAST", "UAST Rating", "Scoring Profile",
     ]]
-    if sort_by_season:
-        table_df = table_df.sort_values("Season", ascending=True).reset_index(drop=True)
+    default_label, default_ascending = ("Season", True) if sort_by_season else ("Scoring+", False)
+    if rank_key is None:
+        table_df = table_df.sort_values(default_label, ascending=default_ascending).reset_index(drop=True)
     else:
-        table_df = table_df.sort_values("Scoring+", ascending=False).reset_index(drop=True)
+        sortable_labels = [c for c in table_df.columns if c not in ("UAST Rating", "Scoring Profile")]
+        sort_label, ascending = render_sort_controls(
+            sortable_labels, default_label, rank_key, default_ascending
+        )
+        table_df = apply_rank_column(table_df, sort_label, ascending)
 
     styled_table_df = (
         table_df.style
         .format({
+            "Rk": "{:.0f}",
             "Age": "{:.0f}",
             "GP": "{:.0f}",
             "MPG": "{:.1f}",
@@ -462,6 +496,7 @@ def render_player_stats_table(
         use_container_width=True,
         hide_index=True,
         column_config={
+            "Rk": st.column_config.NumberColumn("Rk", format="%d", width=60),
             "Player": st.column_config.TextColumn(width="medium"),
             "Age": st.column_config.NumberColumn(format="%d", width="small"),
             "GP": st.column_config.NumberColumn(format="%d", width="small"),
@@ -801,7 +836,9 @@ def render_home(df: pd.DataFrame) -> None:
 
     st.divider()
 
-    render_player_stats_table(table_source, sort_by_season=selected_player_id is not None)
+    render_player_stats_table(
+        table_source, sort_by_season=selected_player_id is not None, rank_key="players_table"
+    )
 
 
 # --- Player Breakdown page ------------------------------------------------------
@@ -1591,12 +1628,16 @@ def render_team_stats_table(df: pd.DataFrame, table_source: pd.DataFrame) -> Non
         "tm_tov_pct": "TOV%",
         "pct_uast_fgm": "FGM% UAST",
     })
-    # Sorted on the unrounded oRating+ value; only the displayed text below is rounded.
-    table_df = table_df.sort_values("oRating+", ascending=False).reset_index(drop=True)
+    # Sorted on the unrounded values; only the displayed text below is rounded.
+    sort_label, ascending = render_sort_controls(
+        list(table_df.columns), "oRating+", "teams_table", default_ascending=False
+    )
+    table_df = apply_rank_column(table_df, sort_label, ascending)
 
     styled_table_df = (
         table_df.style
         .format({
+            "Rk": "{:.0f}",
             "W": "{:.0f}",
             "L": "{:.0f}",
             "Win%": "{:.3f}",
@@ -1622,6 +1663,7 @@ def render_team_stats_table(df: pd.DataFrame, table_source: pd.DataFrame) -> Non
         selection_mode="single-row",
         key="teams_stats_table",
         column_config={
+            "Rk": st.column_config.NumberColumn("Rk", format="%d", width=60),
             "Team Name": st.column_config.TextColumn(width="medium"),
             "Season": st.column_config.TextColumn(width="small"),
             "W": st.column_config.NumberColumn(format="%d", width="small"),
