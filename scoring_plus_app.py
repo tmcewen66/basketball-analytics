@@ -462,7 +462,10 @@ def render_player_stats_table(
     if rank_key is None:
         table_df = table_df.sort_values(default_label, ascending=default_ascending).reset_index(drop=True)
     else:
-        sortable_labels = [c for c in table_df.columns if c not in ("UAST Rating", "Scoring Profile")]
+        non_sortable = {"Player", "Team", "Season", "UAST Rating", "Scoring Profile"}
+        sortable_labels = [c for c in table_df.columns if c not in non_sortable]
+        if default_label not in sortable_labels:
+            default_label, default_ascending = "Scoring+", False
         sort_label, ascending = render_sort_controls(
             sortable_labels, default_label, rank_key, default_ascending
         )
@@ -496,7 +499,7 @@ def render_player_stats_table(
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Rk": st.column_config.NumberColumn("Rk", format="%d", width=60),
+            "Rk": st.column_config.NumberColumn("Rk", format="%d", width=40),
             "Player": st.column_config.TextColumn(width="medium"),
             "Age": st.column_config.NumberColumn(format="%d", width="small"),
             "GP": st.column_config.NumberColumn(format="%d", width="small"),
@@ -1629,8 +1632,9 @@ def render_team_stats_table(df: pd.DataFrame, table_source: pd.DataFrame) -> Non
         "pct_uast_fgm": "FGM% UAST",
     })
     # Sorted on the unrounded values; only the displayed text below is rounded.
+    sortable_labels = [c for c in table_df.columns if c not in ("Team Name", "Season")]
     sort_label, ascending = render_sort_controls(
-        list(table_df.columns), "oRating+", "teams_table", default_ascending=False
+        sortable_labels, "oRating+", "teams_table", default_ascending=False
     )
     table_df = apply_rank_column(table_df, sort_label, ascending)
 
@@ -1663,7 +1667,7 @@ def render_team_stats_table(df: pd.DataFrame, table_source: pd.DataFrame) -> Non
         selection_mode="single-row",
         key="teams_stats_table",
         column_config={
-            "Rk": st.column_config.NumberColumn("Rk", format="%d", width=60),
+            "Rk": st.column_config.NumberColumn("Rk", format="%d", width=40),
             "Team Name": st.column_config.TextColumn(width="medium"),
             "Season": st.column_config.TextColumn(width="small"),
             "W": st.column_config.NumberColumn(format="%d", width="small"),
